@@ -1,23 +1,20 @@
 import requests
 import os
+import re
 
-# Безопасно берем данные из защищенных настроек GitHub
+# === НАСТРОЙКИ ===
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")  # Твой личный ID (на случай ошибок)
-DROPS_CHANNEL_ID = os.environ.get("DROPS_CHANNEL_ID")  # ID канала @AlexPlayDrops
-HUB_CHANNEL_ID = os.environ.get("HUB_CHANNEL_ID")      # ID канала @AlexPlayHub
+CHAT_ID = os.environ.get("CHAT_ID")
+DROPS_CHANNEL_ID = os.environ.get("DROPS_CHANNEL_ID")
+HUB_CHANNEL_ID = os.environ.get("HUB_CHANNEL_ID")
 
-# Проверка: если не хватает хотя бы одного ключа, останавливаемся
 if not all([BOT_TOKEN, DROPS_CHANNEL_ID, HUB_CHANNEL_ID]):
-    print("❌ ОШИБКА: Не найдены необходимые секреты в настройках GitHub!")
+    print("❌ ОШИБКА: Не найдены необходимые секреты!")
     exit(1)
 
-# Адреса API
-EPIC_API = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
 def send_to_telegram(chat_id, text):
-    """Функция отправки сообщения в Telegram"""
     try:
         response = requests.post(TELEGRAM_URL, data={
             "chat_id": chat_id,
@@ -26,108 +23,113 @@ def send_to_telegram(chat_id, text):
             "disable_web_page_preview": False
         }, timeout=10)
         if response.status_code == 200:
-            print(f"✅ Успешно отправлено в канал {chat_id}")
+            print(f"✅ Отправлено в {chat_id}")
             return True
         else:
-            print(f" Ошибка Telegram {response.status_code}: {response.text}")
+            print(f"❌ Ошибка Telegram: {response.text}")
             return False
     except Exception as e:
-        print(f"❌ Ошибка сети при отправке: {e}")
+        print(f"❌ Ошибка сети: {e}")
         return False
 
-def check_free_games():
-    """Основная функция проверки и публикации"""
-    print("🔍 Начинаем проверку Epic Games Store...")
+# === 1. ПРОВЕРКА EPIC GAMES (Прямой API) ===
+def check_epic():
+    print("🔍 Проверяем Epic Games...")
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        r = requests.get(EPIC_API, headers=headers, timeout=15)
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get("https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions", headers=headers, timeout=15)
         r.raise_for_status()
-        
         data = r.json()
+        elements = data.get("data", {}).get("Catalog", {}).get("searchStore", {}).get("elements", []) or []
         
-        # Безопасное извлечение списка игр
-        elements = []
-        if isinstance(data, dict) and data.get("data"):
-            elements = data["data"].get("Catalog", {}).get("searchStore", {}).get("elements", []) or []
-        
-        # Фильтруем только те, где цена со скидкой равна 0 (бесплатные)
         free_games = []
         for el in elements:
-            if not isinstance(el, dict):
-                continue
+            if not isinstance(el, dict): continue
             price_info = el.get("price", {}).get("totalPrice", {}) or {}
             if price_info.get("discountPrice", 999999) == 0:
                 free_games.append(el)
-        
-        main_link = "https://store.epicgames.com/ru/free-games"
-        
-        # Если бесплатных игр сейчас нет
-        if not free_games:
-            no_games_msg = "🤖 <b>Тишина в эфире!</b>\n\n"
-            no_games_msg += "Сегодня Epic Games не раздаёт новых игр.\n\n"
-            no_games_msg += "Но мы продолжаем следить 24/7! 🔔\n"
-            no_games_msg += "Следи за обновлениями в @AlexPlayDrops"
-            send_to_telegram(DROPS_CHANNEL_ID, no_games_msg)
-            return
-        
-        # ==========================================
-        # ФОРМИРОВАНИЕ КРАСИВОГО ПОСТА ДЛЯ DROPS
-        # ==========================================
-        drops_msg = " <b>ВНИМАНИЕ! EPIC GAMES РАЗДАЕТ ИГРЫ БЕСПЛАТНО!</b>\n\n"
-        
-        for i, g in enumerate(free_games[:5], 1):
-            title = g.get("title", "Неизвестная игра")
-            price = g.get("price", {}).get("totalPrice", {}).get("fmtPrice", {}).get("originalPrice", "0") or "0"
-            drops_msg += f" <b>{i}. {title}</b>\n"
-            drops_msg += f"💰 <i>Оригинальная цена:</i> {price}\n\n"
-        
-        drops_msg += "✅ <b>КАК ЗАБРАТЬ:</b>\n"
-        drops_msg += "1️⃣ Перейди по ссылке\n"
-        drops_msg += "2️⃣ Нажми «Получить»\n"
-        drops_msg += "3️⃣ Игра останется в библиотеке навсегда!\n\n"
-        
-        drops_msg += f" <b>ЗАБРАТЬ ИГРЫ СЕЙЧАС:</b> {main_link}\n\n"
-        drops_msg += "⏰ <i>Раздача заканчивается через 48 часов!</i>\n\n"
-        drops_msg += " <i>Комментируй, какую игру ты заберешь первым</i>\n\n"
-        drops_msg += "🌟 <b>Подпишись на @AlexPlayHub — там ты найдешь:</b>\n"
-        drops_msg += "• Обзоры новых релизов\n"
-        drops_msg += "• Секреты геймплея\n"
-        drops_msg += "• Ретро-подборки\n\n"
-        drops_msg += "💡 <i>Каждый четверг — новые раздачи, не пропусти!</i>"
-        
-        # ==========================================
-        # ФОРМИРОВАНИЕ ПОСТА ДЛЯ HUB
-        # ==========================================
-        hub_msg = "🎁 <b>ЭТО ВАЖНО! EPIC GAMES РАЗДАЕТ ИГРЫ БЕСПЛАТНО</b>\n\n"
-        
-        for i, g in enumerate(free_games[:3], 1):
-            title = g.get("title", "Неизвестная игра")
-            hub_msg += f"{i}.  <b>{title}</b>\n"
-        
-        hub_msg += "\n🔥 <b>СРОЧНО ЗАБИРАЙ:</b>\n"
-        hub_msg += "👉 @AlexPlayDrops\n\n"
-        
-        hub_msg += "⏰ <i>Раздача заканчивается через 48 часов!</i>\n\n"
-        hub_msg += "💬 <i>Проголосуй в комментариях:</i>\n"
-        hub_msg += "• Нравится ли тебе этот формат?\n"
-        hub_msg += "• Что еще хочешь видеть в канале?\n\n"
-        hub_msg += "🔔 <i>Включай уведомления, чтобы не пропустить следующую раздачу!</i>"
-        
-        # ==========================================
-        # ОТПРАВКА В КАНАЛЫ
-        # ==========================================
-        success_drops = send_to_telegram(DROPS_CHANNEL_ID, drops_msg)
-        success_hub = send_to_telegram(HUB_CHANNEL_ID, hub_msg)
-        
-        if success_drops and success_hub:
-            print("✅ Публикация в оба канала успешно завершена!")
-        else:
-            print("⚠️ Частичный успех — проверь, в какой канал не дошло сообщение")
-        
+        return free_games
     except Exception as e:
-        error_msg = f"️ <b>Техническая ошибка бота:</b>\n<code>{str(e)}</code>\n\nАдминистратор уже уведомлен."
-        send_to_telegram(CHAT_ID, error_msg)  # Отправляем отчет об ошибке тебе в личку
-        print(f"❌ Критическая ошибка выполнения: {e}")
+        print(f"️ Ошибка Epic API: {e}")
+        return []
+
+# === 2. ПРОВЕРКА ОСТАЛЬНЫХ ПЛОЩАДОК (Steam, GOG, Amazon, PS, Xbox через Reddit API) ===
+def check_other_platforms():
+    print("🔍 Проверяем Steam, GOG, Amazon, PS, Xbox...")
+    try:
+        # Используем публичный JSON API Reddit (r/FreeGameFindings)
+        url = "https://www.reddit.com/r/FreeGameFindings/hot.json?limit=15"
+        headers = {"User-Agent": "AlexPlayBot/1.0 (Telegram Bot)"}
+        r = requests.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        
+        posts = r.json().get("data", {}).get("children", [])
+        freebies = []
+        
+        # Фильтруем только реально бесплатные раздачи
+        for post in posts:
+            title = post["data"]["title"]
+            link = "https://reddit.com" + post["data"]["permalink"]
+            # Ищем ключевые слова
+            if re.search(r'\b(free|giveaway|100% off|100%|раздача)\b', title, re.IGNORECASE):
+                # Убираем лишние теги в начале названия
+                clean_title = re.sub(r'^\[[^\]]*\]\s*', '', title)
+                freebies.append({"title": clean_title, "link": link})
+                
+        # Возвращаем топ-5 свежих раздач
+        return freebies[:5]
+    except Exception as e:
+        print(f"⚠️ Ошибка Reddit API: {e}")
+        return []
+
+# === ГЛАВНАЯ ФУНКЦИЯ ===
+def main():
+    print(" Запуск полного сканирования халявы...")
+    
+    epic_games = check_epic()
+    other_freebies = check_other_platforms()
+    
+    if not epic_games and not other_freebies:
+        send_to_telegram(DROPS_CHANNEL_ID, "🤖 <b>Тишина в эфире!</b>\n\nСегодня крупных раздач не найдено. Но мы продолжаем следить 24/7! 🔔\n\nСледи за обновлениями в @AlexPlayDrops")
+        return
+
+    # ==========================================
+    # ФОРМИРОВАНИЕ ПОСТА ДЛЯ @AlexPlayDrops
+    # ==========================================
+    drops_msg = "🔥 <b>ГЛОБАЛЬНЫЙ СБОР ХАЛЯВЫ!</b>\n\n"
+    
+    # Блок Epic Games
+    if epic_games:
+        drops_msg += "🟣 <b>EPIC GAMES:</b>\n"
+        for i, g in enumerate(epic_games[:3], 1):
+            title = g.get("title", "Игра")
+            price = g.get("price", {}).get("totalPrice", {}).get("fmtPrice", {}).get("originalPrice", "0") or "0"
+            drops_msg += f"  {i}. <b>{title}</b> <i>(было {price})</i>\n"
+        drops_msg += f"🔗 <b>Забрать:</b> https://store.epicgames.com/ru/free-games\n\n"
+        
+    # Блок Остальные платформы
+    if other_freebies:
+        drops_msg += "🟢 <b>STEAM, GOG, AMAZON, PS, XBOX:</b>\n"
+        for i, item in enumerate(other_freebies, 1):
+            drops_msg += f"  {i}. <b>{item['title']}</b>\n"
+            drops_msg += f"     🔗 <a href='{item['link']}'>Ссылка на раздачу</a>\n\n"
+            
+    drops_msg += "⏰ <i>Раздачи ограничены по времени! Забирай, пока не поздно.</i>\n\n"
+    drops_msg += "🌟 <i>Больше новостей в @AlexPlayHub</i>"
+    
+    # ==========================================
+    # ФОРМИРОВАНИЕ ПОСТА ДЛЯ @AlexPlayHub
+    # ==========================================
+    hub_msg = " <b>Свежий сбор халявы со всех площадок!</b>\n\n"
+    hub_msg += "Epic Games, Steam, GOG, Amazon Prime и консоли.\n\n"
+    hub_msg += " <b>Подробный список и прямые ссылки уже в канале:</b>\n"
+    hub_msg += " @AlexPlayDrops\n\n"
+    hub_msg += "💬 <i>Какую игру заберешь сегодня? Пиши в комменты!</i>"
+    
+    # === ОТПРАВКА ===
+    send_to_telegram(DROPS_CHANNEL_ID, drops_msg)
+    send_to_telegram(HUB_CHANNEL_ID, hub_msg)
+    print("✅ Публикация завершена!")
 
 if __name__ == "__main__":
-    check_free_games()
+    main()
