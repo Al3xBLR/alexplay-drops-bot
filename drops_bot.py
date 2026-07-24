@@ -2,19 +2,17 @@ import requests
 import os
 from datetime import datetime
 
-# Берем данные из настроек GitHub (это самый надежный способ)
-BOT_TOKEN = os.environ.get("8802598546:AAFYr68ro4qTxr_CQ_VPFr1eHUJwhDpwTQg")
-CHAT_ID = os.environ.get("426792094")
+# Безопасно берем данные из защищенных настроек GitHub
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
 
-# Проверка: если данные не загрузились, скрипт сразу об этом скажет в логах
 if not BOT_TOKEN or not CHAT_ID:
-    print("❌ ОШИБКА: Не найдены BOT_TOKEN или CHAT_ID в настройках GitHub!")
+    print("❌ ОШИБКА: Не найдены BOT_TOKEN или CHAT_ID в секретах GitHub!")
     exit(1)
 
 EPIC_API = "https://store-site-backend-static.ak.epicgames.com/graphql"
-TELEGRAM_URL = f"https://api.telegram.org/bot8802598546:AAFYr68ro4qTxr_CQ_VPFr1eHUJwhDpwTQg/sendMessage"
+TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-# Запрос к Epic Games на поиск бесплатных игр
 QUERY = """
 query searchQuery {
   Catalog {
@@ -47,7 +45,7 @@ def check_free_games():
     print("🔍 Проверяем Epic Games Store...")
     try:
         r = requests.post(EPIC_API, json={"query": QUERY}, timeout=15)
-        r.raise_for_status() # Проверка на ошибки HTTP
+        r.raise_for_status()
         
         games = r.json()["data"]["Catalog"]["searchStore"]["elements"]
         
@@ -56,7 +54,7 @@ def check_free_games():
             return
         
         msg = "🎁 <b>Свежая халява в Epic Games!</b>\n\n"
-        for g in games[:5]: # Берем максимум 5 игр, если их вдруг несколько
+        for g in games[:5]:
             title = g["title"]
             slug = g["urlSlug"]
             price = g["price"]["totalPrice"]["fmtPrice"]["originalPrice"]
