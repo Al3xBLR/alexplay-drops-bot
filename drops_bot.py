@@ -1,6 +1,5 @@
 import requests
 import os
-from datetime import datetime
 
 # Безопасно берем данные из защищенных настроек GitHub
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -10,8 +9,8 @@ if not BOT_TOKEN or not CHAT_ID:
     print("❌ ОШИБКА: Не найдены BOT_TOKEN или CHAT_ID в секретах GitHub!")
     exit(1)
 
-# НОВЫЙ, стабильный endpoint специально для бесплатных игр Epic Games
-EPIC_API = "https://store-site-backend-static-ipv4.ak.epicgames.com/freeGamesPromotions"
+# Стабильный публичный адрес Epic Games для бесплатных игр
+EPIC_API = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
 def send_telegram(text):
@@ -27,20 +26,29 @@ def send_telegram(text):
 def check_free_games():
     print("🔍 Проверяем Epic Games Store...")
     try:
-        # Добавляем заголовок, чтобы Epic Games не блокировал запрос как от бота
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         r = requests.get(EPIC_API, headers=headers, timeout=15)
         r.raise_for_status()
         
         data = r.json()
-        elements = data.get("data", {}).get("Catalog", {}).get("searchStore", {}).get("elements", [])
         
-        # Фильтруем только те игры, у которых есть активная или предстоящая акция
+        # Максимально безопасное извлечение данных (защита от null/None)
+        elements = []
+        if isinstance(data, dict) and data.get("data") is not None:
+            catalog = data["data"].get("Catalog", {}) or {}
+            search_store = catalog.get("searchStore", {}) or {}
+            elements = search_store.get("elements", []) or []
+        
         free_games = []
         for el in elements:
-            promotions = el.get("promotions", {}).get("promotionalOffers", [])
-            upcoming = el.get("promotions", {}).get("upcomingPromotionalOffers", [])
-            if promotions or upcoming:
+            if not isinstance(el, dict):
+                continue
+            
+            # Игра бесплатна, если цена со скидкой равна 0
+            price_info = el.get("price", {}).get("totalPrice", {}) or {}
+            discount_price = price_info.get("discountPrice", 999999)
+            
+            if discount_price == 0:
                 free_games.append(el)
         
         if not free_games:
@@ -48,10 +56,10 @@ def check_free_games():
             return
         
         msg = "🎁 <b>Свежая халява в Epic Games!</b>\n\n"
-        for g in free_games[:5]: # Берем топ-5 актуальных предложений
-            title = g.get("title")
-            slug = g.get("productSlug") or g.get("urlSlug")
-            price = g.get("price", {}).get("totalPrice", {}).get("fmtPrice", {}).get("originalPrice", "0")
+        for g in free_games[:5]: # Берем до 5 игр, если их несколько
+            title = g.get("title", "Неизвестная игра")
+            slug = g.get("productSlug") or g.get("urlSlug", "")
+            price = g.get("price", {}).get("totalPrice", {}).get("fmtPrice", {}).get("originalPrice", "0") or "0"
             link = f"https://store.epicgames.com/ru/p/{slug}" if slug else "https://store.epicgames.com/ru/"
             msg += f"🎮 <b>{title}</b>\n💰 Было: {price}\n🔗 {link}\n\n"
         
