@@ -10,26 +10,9 @@ if not BOT_TOKEN or not CHAT_ID:
     print("❌ ОШИБКА: Не найдены BOT_TOKEN или CHAT_ID в секретах GitHub!")
     exit(1)
 
-EPIC_API = "https://store-site-backend-static.ak.epicgames.com/graphql"
+# НОВЫЙ, стабильный endpoint специально для бесплатных игр Epic Games
+EPIC_API = "https://store-site-backend-static-ipv4.ak.epicgames.com/freeGamesPromotions"
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-
-QUERY = """
-query searchQuery {
-  Catalog {
-    searchStore(locale: "ru", count: 20, category: "bundles/0", freeGame: true) {
-      elements {
-        title
-        urlSlug
-        price {
-          totalPrice {
-            fmtPrice(locale: "ru-RU") { originalPrice }
-          }
-        }
-      }
-    }
-  }
-}
-"""
 
 def send_telegram(text):
     try:
@@ -44,25 +27,37 @@ def send_telegram(text):
 def check_free_games():
     print("🔍 Проверяем Epic Games Store...")
     try:
-        r = requests.post(EPIC_API, json={"query": QUERY}, timeout=15)
+        # Добавляем заголовок, чтобы Epic Games не блокировал запрос как от бота
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        r = requests.get(EPIC_API, headers=headers, timeout=15)
         r.raise_for_status()
         
-        games = r.json()["data"]["Catalog"]["searchStore"]["elements"]
+        data = r.json()
+        elements = data.get("data", {}).get("Catalog", {}).get("searchStore", {}).get("elements", [])
         
-        if not games:
+        # Фильтруем только те игры, у которых есть активная или предстоящая акция
+        free_games = []
+        for el in elements:
+            promotions = el.get("promotions", {}).get("promotionalOffers", [])
+            upcoming = el.get("promotions", {}).get("upcomingPromotionalOffers", [])
+            if promotions or upcoming:
+                free_games.append(el)
+        
+        if not free_games:
             send_telegram("🤖 <b>Внимание:</b>\nСегодня новых бесплатных игр в Epic Games нет. Но скоро будут!")
             return
         
         msg = "🎁 <b>Свежая халява в Epic Games!</b>\n\n"
-        for g in games[:5]:
-            title = g["title"]
-            slug = g["urlSlug"]
-            price = g["price"]["totalPrice"]["fmtPrice"]["originalPrice"]
-            link = f"https://store.epicgames.com/ru/p/{slug}"
+        for g in free_games[:5]: # Берем топ-5 актуальных предложений
+            title = g.get("title")
+            slug = g.get("productSlug") or g.get("urlSlug")
+            price = g.get("price", {}).get("totalPrice", {}).get("fmtPrice", {}).get("originalPrice", "0")
+            link = f"https://store.epicgames.com/ru/p/{slug}" if slug else "https://store.epicgames.com/ru/"
             msg += f"🎮 <b>{title}</b>\n💰 Было: {price}\n🔗 {link}\n\n"
         
         msg += "⏰ <i>Забирай, пока дают!</i>"
         send_telegram(msg)
+        print("✅ Проверка завершена успешно!")
         
     except Exception as e:
         error_msg = f"⚠️ <b>Ошибка при проверке Epic Games:</b>\n<code>{str(e)}</code>"
