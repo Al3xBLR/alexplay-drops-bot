@@ -1,4 +1,4 @@
-name: Проверка бесплатных игр Epic
+name: Проверка бесплатных игр и контент Hub
 
 on:
   schedule:
@@ -22,8 +22,10 @@ jobs:
       
       - name: Запустить бота
         env:
-          # ВАЖНО: Эти строки передают секреты из настроек GitHub в скрипт Python
+          # ЭТИ СТРОКИ ПЕРЕДАЮТ СЕКРЕТЫ ИЗ GITHUB В PYTHON
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
           DROPS_CHANNEL_ID: ${{ secrets.DROPS_CHANNEL_ID }}
           HUB_CHANNEL_ID: ${{ secrets.HUB_CHANNEL_ID }}
+          RAWG_API_KEY: ${{ secrets.RAWG_API_KEY }}
         run: python drops_bot.py
