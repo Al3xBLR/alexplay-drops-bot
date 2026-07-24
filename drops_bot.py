@@ -2,22 +2,34 @@ import requests
 import os
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
+CHAT_ID = os.environ.get("CHAT_ID")  # Твой личный ID (для тестов)
+DROPS_CHANNEL_ID = os.environ.get("DROPS_CHANNEL_ID")  # ID канала @AlexPlayDrops
+HUB_CHANNEL_ID = os.environ.get("HUB_CHANNEL_ID")      # ID канала @AlexPlayHub
 
-if not BOT_TOKEN or not CHAT_ID:
-    print("❌ ОШИБКА: Не найдены BOT_TOKEN или CHAT_ID!")
+if not all([BOT_TOKEN, DROPS_CHANNEL_ID, HUB_CHANNEL_ID]):
+    print("❌ ОШИБКА: Не найдены необходимые секреты!")
     exit(1)
 
 EPIC_API = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-def send_telegram(text):
+def send_to_telegram(chat_id, text):
     try:
-        response = requests.post(TELEGRAM_URL, data={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=10)
+        response = requests.post(TELEGRAM_URL, data={
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": False
+        }, timeout=10)
         if response.status_code == 200:
-            print("✅ Сообщение отправлено!")
+            print(f"✅ Отправлено в канал {chat_id}")
+            return True
+        else:
+            print(f"❌ Ошибка {response.status_code}: {response.text}")
+            return False
     except Exception as e:
-        print(f"❌ Ошибка: {e}")
+        print(f"❌ Ошибка отправки: {e}")
+        return False
 
 def check_free_games():
     print("🔍 Проверяем Epic Games...")
@@ -40,25 +52,43 @@ def check_free_games():
                 free_games.append(el)
         
         if not free_games:
-            send_telegram("🤖 <b>Внимание:</b>\nСегодня бесплатных игр в Epic Games нет.")
+            msg = "🤖 <b>Внимание:</b>\nСегодня бесплатных игр в Epic Games нет.\n\nНо мы продолжаем следить! 🔔"
+            send_to_telegram(DROPS_CHANNEL_ID, msg)
             return
         
-        # УНИВЕРСАЛЬНАЯ ССЫЛКА - всегда работает!
         main_link = "https://store.epicgames.com/ru/free-games"
         
-        msg = "🎁 <b>Свежая халява в Epic Games!</b>\n\n"
+        # Сообщение для канала @AlexPlayDrops
+        drops_msg = "🚨 <b>НОВАЯ ХАЛЯВА В EPIC GAMES!</b>\n\n"
         for g in free_games[:5]:
             title = g.get("title", "Неизвестная игра")
             price = g.get("price", {}).get("totalPrice", {}).get("fmtPrice", {}).get("originalPrice", "0") or "0"
-            msg += f"🎮 <b>{title}</b>\n💰 Было: {price}\n"
+            drops_msg += f"🎮 <b>{title}</b>\n💰 Было: {price}\n\n"
         
-        msg += f"\n <b>ЗАБРАТЬ ВСЕ ИГРЫ:</b> {main_link}"
-        msg += "\n\n⏰ <i>Забирай, пока дают!</i>"
-        send_telegram(msg)
-        print("✅ Готово!")
+        drops_msg += f"<b>🔗 ЗАБРАТЬ ИГРЫ:</b> {main_link}\n\n"
+        drops_msg += "⏰ <i>Забирай, пока дают!</i>\n\n"
+        drops_msg += "<i>Подпишись на @AlexPlayHub — главные новости игр!</i>"
+        
+        # Сообщение для канала @AlexPlayHub (короче, просто новость)
+        hub_msg = "🎁 <b>Epic Games раздают бесплатные игры!</b>\n\n"
+        for g in free_games[:3]:
+            title = g.get("title", "Неизвестная игра")
+            hub_msg += f"• {title}\n"
+        
+        hub_msg += f"\n🔗 Все игры и инструкции в канале @AlexPlayDrops"
+        
+        # Отправляем в оба канала
+        success_drops = send_to_telegram(DROPS_CHANNEL_ID, drops_msg)
+        success_hub = send_to_telegram(HUB_CHANNEL_ID, hub_msg)
+        
+        if success_drops and success_hub:
+            print("✅ Публикация в каналах завершена!")
+        else:
+            print("⚠️ Частичный успех — проверь каналы")
         
     except Exception as e:
-        send_telegram(f"⚠️ <b>Ошибка:</b>\n<code>{str(e)}</code>")
+        error_msg = f"⚠️ <b>Ошибка при проверке Epic Games:</b>\n<code>{str(e)}</code>"
+        send_to_telegram(CHAT_ID, error_msg)  # Отправляем ошибку тебе в личку
         print(f"❌ Ошибка: {e}")
 
 if __name__ == "__main__":
