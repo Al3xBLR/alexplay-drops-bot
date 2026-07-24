@@ -2,8 +2,8 @@ name: Проверка бесплатных игр Epic
 
 on:
   schedule:
-    - cron: '0 7 * * *'  # Запуск каждый день в 10:00 по Москве (7:00 UTC)
-  workflow_dispatch:     # Позволяет запустить вручную для проверки
+    - cron: '0 7 * * *'  # Каждый день в 10:00 по Москве
+  workflow_dispatch:     # Для ручного запуска
 
 jobs:
   check-games:
@@ -22,6 +22,8 @@ jobs:
       
       - name: Запустить бота
         env:
+          # ВАЖНО: Эти строки передают секреты из настроек GitHub в скрипт Python
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
+          DROPS_CHANNEL_ID: ${{ secrets.DROPS_CHANNEL_ID }}
+          HUB_CHANNEL_ID: ${{ secrets.HUB_CHANNEL_ID }}
         run: python drops_bot.py
