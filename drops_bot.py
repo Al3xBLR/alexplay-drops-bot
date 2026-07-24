@@ -12,7 +12,7 @@ if not BOT_TOKEN or not CHAT_ID:
     exit(1)
 
 EPIC_API = "https://store-site-backend-static.ak.epicgames.com/graphql"
-TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+TELEGRAM_URL = f"https://api.telegram.org/bot8802598546:AAFYr68ro4qTxr_CQ_VPFr1eHUJwhDpwTQg/sendMessage"
 
 # Запрос к Epic Games на поиск бесплатных игр
 QUERY = """
