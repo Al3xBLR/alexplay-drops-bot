@@ -39,12 +39,27 @@ def check_free_games():
             search_store = catalog.get("searchStore", {}) or {}
             elements = search_store.get("elements", []) or []
         
+        def check_free_games():
+    print("🔍 Проверяем Epic Games Store...")
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        r = requests.get(EPIC_API, headers=headers, timeout=15)
+        r.raise_for_status()
+        
+        data = r.json()
+        
+        # Максимально безопасное извлечение данных
+        elements = []
+        if isinstance(data, dict) and data.get("data") is not None:
+            catalog = data["data"].get("Catalog", {}) or {}
+            search_store = catalog.get("searchStore", {}) or {}
+            elements = search_store.get("elements", []) or []
+        
         free_games = []
         for el in elements:
             if not isinstance(el, dict):
                 continue
             
-            # Игра бесплатна, если цена со скидкой равна 0
             price_info = el.get("price", {}).get("totalPrice", {}) or {}
             discount_price = price_info.get("discountPrice", 999999)
             
@@ -56,14 +71,27 @@ def check_free_games():
             return
         
         msg = "🎁 <b>Свежая халява в Epic Games!</b>\n\n"
-        for g in free_games[:5]: # Берем до 5 игр, если их несколько
+        for g in free_games[:5]:
             title = g.get("title", "Неизвестная игра")
-            slug = g.get("productSlug") or g.get("urlSlug", "")
+            
+            # Пробуем разные варианты slug
+            slug = g.get("productSlug") or g.get("urlSlug") or g.get("catalogNs", {}).get("mappings", [{}])[0].get("pageSlug", "")
+            
+            # Если slug есть, пробуем стандартную ссылку
+            if slug:
+                # Убираем возможные слеши в начале
+                slug = slug.strip('/')
+                link = f"https://store.epicgames.com/ru/p/{slug}"
+            else:
+                # Если slug нет, используем поиск по названию
+                search_title = title.replace(" ", "+")
+                link = f"https://store.epicgames.com/ru/search?q={search_title}"
+            
             price = g.get("price", {}).get("totalPrice", {}).get("fmtPrice", {}).get("originalPrice", "0") or "0"
-            link = f"https://store.epicgames.com/ru/p/{slug}" if slug else "https://store.epicgames.com/ru/"
-            msg += f"🎮 <b>{title}</b>\n💰 Было: {price}\n🔗 {link}\n\n"
+            
+            msg += f" <b>{title}</b>\n💰 Было: {price}\n🔗 {link}\n\n"
         
-        msg += "⏰ <i>Забирай, пока дают!</i>"
+        msg += "⏰ <i>Забирай, пока дают!</i>\n\n <i>Если ссылка не открывается, просто найди игру по названию в магазине Epic Games</i>"
         send_telegram(msg)
         print("✅ Проверка завершена успешно!")
         
@@ -71,6 +99,3 @@ def check_free_games():
         error_msg = f"⚠️ <b>Ошибка при проверке Epic Games:</b>\n<code>{str(e)}</code>"
         send_telegram(error_msg)
         print(f"❌ Ошибка выполнения: {e}")
-
-if __name__ == "__main__":
-    check_free_games()
