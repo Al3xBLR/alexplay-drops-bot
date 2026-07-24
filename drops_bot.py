@@ -16,6 +16,7 @@ if not all([BOT_TOKEN, DROPS_CHANNEL_ID, HUB_CHANNEL_ID, RAWG_API_KEY]):
     exit(1)
 
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+TELEGRAM_PHOTO_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
 
 
 def send_to_telegram(chat_id, text):
@@ -26,19 +27,48 @@ def send_to_telegram(chat_id, text):
             "parse_mode": "HTML",
             "disable_web_page_preview": False
         }, timeout=10)
-        if response.status_code == 200:
-            print(f"Успешно отправлено в {chat_id}")
-            return True
-        else:
-            print(f"Ошибка Telegram {response.status_code}: {response.text}")
-            return False
+        return response.status_code == 200
     except Exception as e:
-        print(f"Ошибка сети при отправке: {e}")
+        print(f"Ошибка отправки текста: {e}")
         return False
 
 
-# === ИГРА ДНЯ + ФАКТ ДНЯ (RAWG.io на русском) ===
-def get_rawg_game_and_fact():
+def send_photo_to_telegram(chat_id, photo_url, caption):
+    # Telegram ограничивает подпись фото 1024 символами
+    if len(caption) > 1000:
+        caption = caption[:997] + "..."
+
+    # Если картинки нет — отправляем просто текстом
+    if not photo_url:
+        return send_to_telegram(chat_id, caption)
+
+    try:
+        response = requests.post(TELEGRAM_PHOTO_URL, data={
+            "chat_id": chat_id,
+            "photo": photo_url,
+            "caption": caption,
+            "parse_mode": "HTML"
+        }, timeout=15)
+        if response.status_code == 200:
+            print("Фото с игрой отправлено!")
+            return True
+        else:
+            # Если фото не загрузилось — шлём текстом, чтобы пост не пропал
+            return send_to_telegram(chat_id, caption)
+    except Exception as e:
+        print(f"Ошибка отправки фото: {e}")
+        return send_to_telegram(chat_id, caption)
+
+
+def fmt_num(n):
+    # Красивое форматирование чисел: 1234567 -> 1 234 567
+    if not n:
+        return "0"
+    return f"{int(n):,}".replace(",", " ")
+
+
+# === ПОЛУЧЕНИЕ ДАННЫХ ИГРЫ ИЗ RAWG ===
+def get_rawg_game_data():
     print("Запрашиваем игру дня из RAWG.io...")
     try:
         day_of_year = datetime.now().timetuple().tm_yday
@@ -56,7 +86,7 @@ def get_rawg_game_and_fact():
         games = r.json().get("results", [])
 
         if not games:
-            raise Exception("Не удалось получить игры из RAWG")
+            raise Exception("Пустой список игр")
 
         game = random.choice(games)
 
@@ -69,52 +99,188 @@ def get_rawg_game_and_fact():
 
         title = game.get("name", "Неизвестная игра")
         released = game.get("released")
-        if released:
-            year = released[:4]
-        else:
-            year = "Неизвестный год"
+        year = released[:4] if released else "—"
         rating = game.get("rating", "N/A")
+        metacritic = detail.get("metacritic")
+        playtime = detail.get("playtime")
+        added = detail.get("added")
+        reviews_count = detail.get("reviews_count")
+        image_url = detail.get("background_image")
 
         developers = detail.get("developers", [])
-        if developers:
-            dev_name = developers[0]["name"]
-        else:
-            dev_name = "Неизвестный разработчик"
+        dev_name = developers[0]["name"] if developers else "неизвестная студия"
 
-        desc_raw = detail.get("description_raw", "Описание отсутствует.")
+        publishers = detail.get("publishers", [])
+        pub_name = publishers[0]["name"] if publishers else ""
+
+        genres = detail.get("genres", [])
+        genre_names = [g.get("name", "") for g in genres if g.get("name")]
+        genres_str = ", ".join(genre_names[:4])
+
+        platforms = detail.get("platforms", [])
+        plat_names = []
+        for p in platforms:
+            pname = p.get("platform", {}).get("name", "")
+            if pname:
+                plat_names.append(pname)
+        platforms_str = ", ".join(plat_names[:5])
+
+        desc_raw = detail.get("description_raw", "")
         desc_clean = re.sub(r'<[^>]+>', '', desc_raw)
-        if len(desc_clean) > 250:
-            desc = desc_clean[:250] + '...'
+        if len(desc_clean) > 200:
+            desc = desc_clean[:200] + "..."
         else:
             desc = desc_clean
+        if not desc:
+            desc = "Описание пока отсутствует в базе."
 
-        game_msg = "👾 <b>ИГРА ДНЯ</b>\n\n"
-        game_msg += f"🎮 <b>{title}</b> <i>({year})</i>\n"
-        game_msg += f"⭐️ <i>Рейтинг: {rating}/5</i>\n\n"
-        game_msg += f"📝 <i>{desc}</i>\n"
-
-        fact_msg = "💡 <b>ФАКТ ДНЯ</b>\n\n"
-        fact_msg += f"🎮 Студия <b>{dev_name}</b> подарила миру <b>{title}</b>. "
-        fact_msg += "Игра настолько полюбилась геймерам, что её добавили "
-        fact_msg += "в свои библиотеки десятки тысяч человек, "
-        fact_msg += f"а средний рейтинг составил <b>{rating}/5</b>!"
-
-        return game_msg, fact_msg
+        return {
+            "title": title,
+            "year": year,
+            "rating": rating,
+            "metacritic": metacritic,
+            "playtime": playtime,
+            "added": added,
+            "reviews_count": reviews_count,
+            "dev": dev_name,
+            "publisher": pub_name,
+            "genres_str": genres_str,
+            "platforms_str": platforms_str,
+            "desc": desc,
+            "image": image_url,
+        }
 
     except Exception as e:
-        print(f"Ошибка RAWG API: {e}. Используем запасной вариант.")
-        backup_game = (
-            "👾 <b>ИГРА ДНЯ</b>\n\n"
-            "🎮 <b>Minecraft</b> <i>(2011)</i>\n\n"
-            "📝 <i>Самая продаваемая игра в истории, "
-            "бесконечный холст для творчества и выживания.</i>"
+        print(f"Ошибка RAWG API: {e}. Запасной вариант.")
+        return {
+            "title": "Minecraft",
+            "year": "2011",
+            "rating": "4.4",
+            "metacritic": 93,
+            "playtime": 48,
+            "added": 250000,
+            "reviews_count": 5000,
+            "dev": "Mojang Studios",
+            "publisher": "Xbox Game Studios",
+            "genres_str": "песочница, приключение",
+            "platforms_str": "PC, PlayStation, Xbox, Nintendo Switch",
+            "desc": "Самая продаваемая игра в истории — бесконечный холст для творчества и выживания.",
+            "image": None,
+        }
+
+
+# === ПОДПИСЬ К ФОТО (шапка + игра + описание + паспорт) ===
+def build_game_caption(data):
+    msg = "🌟 <b>ALEXPLAY HUB — ЕЖЕДНЕВНЫЙ ВЫПУСК</b>\n"
+    msg += f"📅 <i>{datetime.now().strftime('%d.%m.%Y')}</i>\n\n"
+    msg += "👾 <b>ИГРА ДНЯ</b>\n\n"
+    msg += f"🎮 <b>{data['title']}</b> <i>({data['year']})</i>\n"
+    msg += f"⭐️ Рейтинг игроков: <b>{data['rating']}/5</b>"
+    if data['metacritic']:
+        msg += f"  |  🏆 Metacritic: <b>{data['metacritic']}/100</b>"
+    msg += "\n\n"
+    msg += f"📝 <i>{data['desc']}</i>\n\n"
+    msg += "📊 <b>ПАСПОРТ ИГРЫ</b>\n"
+    if data['genres_str']:
+        msg += f"🎭 Жанры: {data['genres_str']}\n"
+    if data['platforms_str']:
+        msg += f"🖥 Платформы: {data['platforms_str']}\n"
+    if data['playtime'] and data['playtime'] > 0:
+        msg += f"⏱ Среднее прохождение: {int(data['playtime'])} ч\n"
+    if data['publisher']:
+        msg += f"🏢 Издатель: {data['publisher']}\n"
+    if data['added']:
+        msg += f"👥 В библиотеках RAWG: {fmt_num(data['added'])}"
+    return msg
+
+
+# === РАЗВЁРНУТЫЙ УМНЫЙ ФАКТ ДНЯ ===
+def build_fact(data):
+    title = data['title']
+    dev = data['dev']
+    publisher = data['publisher']
+    metacritic = data['metacritic']
+    playtime = data['playtime']
+    added = data['added']
+    reviews_count = data['reviews_count']
+    genres_str = data['genres_str']
+
+    parts = []
+
+    # Вступление про студию и издателя
+    intro = f"🎮 За созданием <b>{title}</b> стоит {dev}"
+    if publisher and publisher != dev:
+        intro += f", а изданием занималась <b>{publisher}</b>"
+    intro += "."
+    parts.append(intro)
+
+    # Про Metacritic
+    if metacritic:
+        if metacritic >= 85:
+            parts.append(
+                f"Критики на Metacritic выставили ей <b>{metacritic}/100</b> "
+                f"— это уровень признанных шедевров индустрии."
+            )
+        elif metacritic >= 75:
+            parts.append(
+                f"На Metacritic игра получила <b>{metacritic}/100</b> "
+                f"— тёплый приём и статус крепкого релиза."
+            )
+        elif metacritic >= 60:
+            parts.append(
+                f"Оценки критиков на Metacritic (<b>{metacritic}/100</b>) "
+                f"оказались сдержанными, но проект нашёл свою аудиторию."
+            )
+        else:
+            parts.append(
+                f"Metacritic оценил релиз в <b>{metacritic}/100</b> — "
+                f"игра вызвала споры, и тем интереснее составить своё мнение."
+            )
+
+    # Про время прохождения
+    if playtime and playtime > 0:
+        pt = int(playtime)
+        if pt >= 40:
+            parts.append(
+                f"Среднее прохождение занимает около <b>{pt} часов</b> — "
+                f"это масштабное приключение, в которое погружаешься надолго."
+            )
+        elif pt >= 15:
+            parts.append(
+                f"В среднем игроки проводят в ней <b>{pt} часов</b> — "
+                f"идеальный баланс между глубиной и длиной."
+            )
+        elif pt >= 5:
+            parts.append(
+                f"Пройти её можно примерно за <b>{pt} часов</b> — "
+                f"концентрированный опыт без лишней воды."
+            )
+        else:
+            parts.append(
+                f"Это короткий, но яркий опыт — около <b>{pt} часов</b> "
+                f"чистого геймплея."
+            )
+
+    # Про популярность и отзывы
+    if added:
+        line = (
+            f"На RAWG её добавили в свои библиотеки более "
+            f"<b>{fmt_num(added)}</b> человек"
         )
-        backup_fact = (
-            "💡 <b>ФАКТ ДНЯ</b>\n\n"
-            "🎮 В Minecraft теоретическое количество возможных миров "
-            "превышает число атомов в наблюдаемой Вселенной."
+        if reviews_count:
+            line += f", оставив <b>{fmt_num(reviews_count)}</b> отзывов"
+        line += " — а это знак настоящей народной любви."
+        parts.append(line)
+
+    # Про жанры
+    if genres_str:
+        parts.append(
+            f"По духу это {genres_str.lower()} — "
+            f"именно такие проекты ценят миллионы геймеров по всему миру."
         )
-        return backup_game, backup_fact
+
+    fact_msg = "💡 <b>ФАКТ ДНЯ</b>\n\n" + " ".join(parts)
+    return fact_msg
 
 
 # === СВЕЖИЕ НОВОСТИ (Reddit r/games) ===
@@ -131,21 +297,17 @@ def get_gaming_news():
         news = []
 
         for post in posts:
-            data = post["data"]
-            title = data["title"]
-            link = "https://reddit.com" + data["permalink"]
-            score = data["score"]
+            pdata = post["data"]
+            title = pdata["title"]
+            link = "https://reddit.com" + pdata["permalink"]
+            score = pdata["score"]
 
             is_popular = score > 100
             is_not_weekly = not title.startswith("Weekly")
 
             if is_popular and is_not_weekly:
                 clean_title = re.sub(r'^\[[^\]]*\]\s*', '', title)
-                news.append({
-                    "title": clean_title,
-                    "link": link,
-                    "score": score
-                })
+                news.append({"title": clean_title, "link": link})
 
         return news[:3]
     except Exception as e:
@@ -153,36 +315,35 @@ def get_gaming_news():
         return []
 
 
-# === ГЛАВНЫЙ ПОСТ ДЛЯ HUB ===
-def generate_hub_content():
+# === ПУБЛИКАЦИЯ В HUB (фото + развёрнутый текст) ===
+def publish_hub():
     print("Генерируем контент для @AlexPlayHub...")
+    data = get_rawg_game_data()
 
-    game_post, fact_post = get_rawg_game_and_fact()
-    news_list = get_gaming_news()
+    caption = build_game_caption(data)
+    fact = build_fact(data)
+    news = get_gaming_news()
 
-    final_msg = "🌟 <b>ALEXPLAY HUB — ЕЖЕДНЕВНЫЙ ВЫПУСК</b>\n\n"
-    final_msg += f"📅 <i>{datetime.now().strftime('%d.%m.%Y')}</i>\n\n"
-    final_msg += "━━━━━━━━━━━━━━━\n\n"
+    # Сообщение 1: красивая карточка с обложкой игры
+    send_photo_to_telegram(HUB_CHANNEL_ID, data["image"], caption)
 
-    final_msg += game_post + "\n\n"
-    final_msg += "━━━━━━━━━━━━━━━\n\n"
+    # Сообщение 2: развёрнутый факт + новости + призыв
+    text2 = fact + "\n\n━━━━━━━━━━━━━━━\n\n"
 
-    if news_list:
-        final_msg += "📰 <b>ГЛАВНЫЕ НОВОСТИ</b>\n\n"
-        for i, news in enumerate(news_list, 1):
-            final_msg += f"{i}. <a href='{news['link']}'>{news['title']}</a>\n\n"
-        final_msg += "━━━━━━━━━━━━━━━\n\n"
+    if news:
+        text2 += "📰 <b>ГЛАВНЫЕ НОВОСТИ</b>\n\n"
+        for i, n in enumerate(news, 1):
+            text2 += f"{i}. <a href='{n['link']}'>{n['title']}</a>\n\n"
+        text2 += "━━━━━━━━━━━━━━━\n\n"
 
-    final_msg += fact_post + "\n\n"
-    final_msg += "━━━━━━━━━━━━━━━\n\n"
+    text2 += "💬 <b>Обсуждаем в комментариях!</b>\n\n"
+    text2 += "🎁 <i>Хочешь забирать игры <b>бесплатно</b>? "
+    text2 += "Подпишись на нашего брата:</i>\n"
+    text2 += "👉 @AlexPlayDrops\n\n"
+    text2 += "🔔 <i>Включай уведомления, чтобы не пропустить!</i>"
 
-    final_msg += "💬 <b>Обсуждаем в комментариях!</b>\n\n"
-    final_msg += "🎁 <i>Хочешь забирать игры <b>бесплатно</b>? "
-    final_msg += "Подпишись на нашего брата:</i>\n"
-    final_msg += "👉 @AlexPlayDrops\n\n"
-    final_msg += "🔔 <i>Включай уведомления, чтобы не пропустить!</i>"
-
-    return final_msg
+    send_to_telegram(HUB_CHANNEL_ID, text2)
+    print("Контент для @AlexPlayHub опубликован!")
 
 
 # === ПРОВЕРКА EPIC GAMES ===
@@ -231,32 +392,23 @@ def check_other_platforms():
                 continue
             posts = r.json().get("data", {}).get("children", [])
             for post in posts:
-                data = post["data"]
-                title = data["title"]
-                link = "https://reddit.com" + data["permalink"]
+                pdata = post["data"]
+                title = pdata["title"]
+                link = "https://reddit.com" + pdata["permalink"]
                 pattern = r'\b(free|giveaway|100%|раздача)\b'
                 if re.search(pattern, title, re.IGNORECASE):
                     clean_title = re.sub(r'^\[[^\]]*\]\s*', '', title)
                     already_added = any(item['link'] == link for item in freebies)
                     if not already_added:
-                        freebies.append({
-                            "title": clean_title,
-                            "link": link
-                        })
+                        freebies.append({"title": clean_title, "link": link})
         return freebies[:6]
     except Exception as e:
         print(f"Ошибка Reddit API: {e}")
         return []
 
 
-# === ГЛАВНАЯ ФУНКЦИЯ ===
-def main():
-    print("Запуск полного сканирования и генерации контента...")
-
-    hub_content = generate_hub_content()
-    send_to_telegram(HUB_CHANNEL_ID, hub_content)
-    print("Контент для @AlexPlayHub опубликован!")
-
+# === ПУБЛИКАЦИЯ ХАЛЯВЫ В DROPS ===
+def publish_drops():
     epic_games = check_epic()
     other_freebies = check_other_platforms()
 
@@ -298,6 +450,13 @@ def main():
 
     send_to_telegram(DROPS_CHANNEL_ID, drops_msg)
     print("Контент для @AlexPlayDrops опубликован!")
+
+
+# === ГЛАВНАЯ ФУНКЦИЯ ===
+def main():
+    print("Запуск полного сканирования и генерации контента...")
+    publish_hub()
+    publish_drops()
 
 
 if __name__ == "__main__":
