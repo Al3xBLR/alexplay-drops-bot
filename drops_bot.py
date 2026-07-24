@@ -1,6 +1,7 @@
 import requests
 import os
 import re
+import json
 from datetime import datetime
 import random
 
@@ -18,6 +19,28 @@ if not all([BOT_TOKEN, DROPS_CHANNEL_ID, HUB_CHANNEL_ID, RAWG_API_KEY]):
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 TELEGRAM_PHOTO_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
 
+# Маппинг жанров (рус -> англ) для красивых хештегов
+GENRE_TAG_MAP = {
+    "Экшен": "Action",
+    "Action": "Action",
+    "Ролевая игра": "RPG",
+    "RPG": "RPG",
+    "Приключение": "Adventure",
+    "Стратегия": "Strategy",
+    "Шутер": "Shooter",
+    "Симулятор": "Simulation",
+    "Головоломка": "Puzzle",
+    "Платформер": "Platformer",
+    "Инди": "Indie",
+    "Хоррор": "Horror",
+    "Гонки": "Racing",
+    "Файтинг": "Fighting",
+    "Казуальная": "Casual",
+    "Песочница": "Sandbox",
+    "Аркада": "Arcade",
+    "Спорт": "Sport",
+}
+
 
 def send_to_telegram(chat_id, text):
     try:
@@ -33,27 +56,28 @@ def send_to_telegram(chat_id, text):
         return False
 
 
-def send_photo_to_telegram(chat_id, photo_url, caption):
-    # Telegram ограничивает подпись фото 1024 символами
+def send_photo_to_telegram(chat_id, photo_url, caption, reply_markup=None):
     if len(caption) > 1000:
         caption = caption[:997] + "..."
 
-    # Если картинки нет — отправляем просто текстом
     if not photo_url:
         return send_to_telegram(chat_id, caption)
 
+    payload = {
+        "chat_id": chat_id,
+        "photo": photo_url,
+        "caption": caption,
+        "parse_mode": "HTML",
+    }
+    if reply_markup is not None:
+        payload["reply_markup"] = json.dumps(reply_markup)
+
     try:
-        response = requests.post(TELEGRAM_PHOTO_URL, data={
-            "chat_id": chat_id,
-            "photo": photo_url,
-            "caption": caption,
-            "parse_mode": "HTML"
-        }, timeout=15)
+        response = requests.post(TELEGRAM_PHOTO_URL, data=payload, timeout=15)
         if response.status_code == 200:
             print("Фото с игрой отправлено!")
             return True
         else:
-            # Если фото не загрузилось — шлём текстом, чтобы пост не пропал
             return send_to_telegram(chat_id, caption)
     except Exception as e:
         print(f"Ошибка отправки фото: {e}")
@@ -61,10 +85,37 @@ def send_photo_to_telegram(chat_id, photo_url, caption):
 
 
 def fmt_num(n):
-    # Красивое форматирование чисел: 1234567 -> 1 234 567
     if not n:
         return "0"
     return f"{int(n):,}".replace(",", " ")
+
+
+def make_hashtags(genres_list):
+    tags = []
+    for g in genres_list:
+        clean = g.strip()
+        tag = GENRE_TAG_MAP.get(clean)
+        if tag and tag not in tags:
+            tags.append(tag)
+    tags = tags[:3]
+    tags.append("ИграДня")
+    tags.append("AlexPlay")
+    return " ".join("#" + t for t in tags)
+
+
+def build_inline_buttons(slug):
+    buttons = [
+        {
+            "text": "🎁 Забрать халяву",
+            "url": "https://t.me/AlexPlayDrops",
+        }
+    ]
+    if slug:
+        buttons.append({
+            "text": "📖 Подробнее об игре",
+            "url": f"https://rawg.io/games/{slug}",
+        })
+    return {"inline_keyboard": [buttons]}
 
 
 # === ПОЛУЧЕНИЕ ДАННЫХ ИГРЫ ИЗ RAWG ===
@@ -89,6 +140,7 @@ def get_rawg_game_data():
             raise Exception("Пустой список игр")
 
         game = random.choice(games)
+        slug = game.get("slug")
 
         detail_url = (
             f"https://api.rawg.io/api/games/{game['id']}"
@@ -127,8 +179,8 @@ def get_rawg_game_data():
 
         desc_raw = detail.get("description_raw", "")
         desc_clean = re.sub(r'<[^>]+>', '', desc_raw)
-        if len(desc_clean) > 200:
-            desc = desc_clean[:200] + "..."
+        if len(desc_clean) > 150:
+            desc = desc_clean[:150] + "..."
         else:
             desc = desc_clean
         if not desc:
@@ -145,9 +197,11 @@ def get_rawg_game_data():
             "dev": dev_name,
             "publisher": pub_name,
             "genres_str": genres_str,
+            "genres_list": genre_names,
             "platforms_str": platforms_str,
             "desc": desc,
             "image": image_url,
+            "slug": slug,
         }
 
     except Exception as e:
@@ -163,13 +217,15 @@ def get_rawg_game_data():
             "dev": "Mojang Studios",
             "publisher": "Xbox Game Studios",
             "genres_str": "песочница, приключение",
+            "genres_list": ["Песочница", "Приключение"],
             "platforms_str": "PC, PlayStation, Xbox, Nintendo Switch",
-            "desc": "Самая продаваемая игра в истории — бесконечный холст для творчества и выживания.",
+            "desc": "Самая продаваемая игра в истории — бесконечный холст для творчества.",
             "image": None,
+            "slug": "minecraft",
         }
 
 
-# === ПОДПИСЬ К ФОТО (шапка + игра + описание + паспорт) ===
+# === ПОДПИСЬ К ФОТО (карточка игры + паспорт + хештеги) ===
 def build_game_caption(data):
     msg = "🌟 <b>ALEXPLAY HUB — ЕЖЕДНЕВНЫЙ ВЫПУСК</b>\n"
     msg += f"📅 <i>{datetime.now().strftime('%d.%m.%Y')}</i>\n\n"
@@ -190,7 +246,8 @@ def build_game_caption(data):
     if data['publisher']:
         msg += f"🏢 Издатель: {data['publisher']}\n"
     if data['added']:
-        msg += f"👥 В библиотеках RAWG: {fmt_num(data['added'])}"
+        msg += f"👥 В библиотеках: {fmt_num(data['added'])}\n"
+    msg += "\n" + make_hashtags(data['genres_list'])
     return msg
 
 
@@ -207,14 +264,12 @@ def build_fact(data):
 
     parts = []
 
-    # Вступление про студию и издателя
     intro = f"🎮 За созданием <b>{title}</b> стоит {dev}"
     if publisher and publisher != dev:
         intro += f", а изданием занималась <b>{publisher}</b>"
     intro += "."
     parts.append(intro)
 
-    # Про Metacritic
     if metacritic:
         if metacritic >= 85:
             parts.append(
@@ -237,7 +292,6 @@ def build_fact(data):
                 f"игра вызвала споры, и тем интереснее составить своё мнение."
             )
 
-    # Про время прохождения
     if playtime and playtime > 0:
         pt = int(playtime)
         if pt >= 40:
@@ -261,7 +315,6 @@ def build_fact(data):
                 f"чистого геймплея."
             )
 
-    # Про популярность и отзывы
     if added:
         line = (
             f"На RAWG её добавили в свои библиотеки более "
@@ -272,15 +325,13 @@ def build_fact(data):
         line += " — а это знак настоящей народной любви."
         parts.append(line)
 
-    # Про жанры
     if genres_str:
         parts.append(
             f"По духу это {genres_str.lower()} — "
             f"именно такие проекты ценят миллионы геймеров по всему миру."
         )
 
-    fact_msg = "💡 <b>ФАКТ ДНЯ</b>\n\n" + " ".join(parts)
-    return fact_msg
+    return "💡 <b>ФАКТ ДНЯ</b>\n\n" + " ".join(parts)
 
 
 # === СВЕЖИЕ НОВОСТИ (Reddit r/games) ===
@@ -315,7 +366,7 @@ def get_gaming_news():
         return []
 
 
-# === ПУБЛИКАЦИЯ В HUB (фото + развёрнутый текст) ===
+# === ПУБЛИКАЦИЯ В HUB ===
 def publish_hub():
     print("Генерируем контент для @AlexPlayHub...")
     data = get_rawg_game_data()
@@ -323,11 +374,12 @@ def publish_hub():
     caption = build_game_caption(data)
     fact = build_fact(data)
     news = get_gaming_news()
+    buttons = build_inline_buttons(data.get("slug"))
 
-    # Сообщение 1: красивая карточка с обложкой игры
-    send_photo_to_telegram(HUB_CHANNEL_ID, data["image"], caption)
+    # Сообщение 1: карточка с обложкой + кнопки + хештеги
+    send_photo_to_telegram(HUB_CHANNEL_ID, data["image"], caption, buttons)
 
-    # Сообщение 2: развёрнутый факт + новости + призыв
+    # Сообщение 2: факт + новости + призыв
     text2 = fact + "\n\n━━━━━━━━━━━━━━━\n\n"
 
     if news:
