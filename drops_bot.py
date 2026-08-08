@@ -27,6 +27,82 @@ SCHEDULE = {9: "drops", 12: "hub_game", 15: "hub_news", 18: "hub_steam", 21: "hu
 WARNINGS = []
 SOURCE_STATUS = {"epic": "—", "reddit": "—", "rawg": "—", "rss": "—", "youtube": "—", "steam": "—"}
 
+# === ЗАПАСНОЙ СПИСОК ИГР (если RAWG недоступен) — меняется каждый день ===
+FALLBACK_GAMES = [
+    {"title": "The Witcher 3: Wild Hunt", "year": "2015", "dev": "CD Projekt RED",
+     "desc": "Эпичная RPG про Геральта из Ривии. Один из лучших сюжетов в истории игр.",
+     "genres": ["Ролевая игра", "Приключение"]},
+    {"title": "Elden Ring", "year": "2022", "dev": "FromSoftware",
+     "desc": "Мрачное фэнтези в открытом мире от создателей Dark Souls.",
+     "genres": ["Ролевая игра", "Экшен"]},
+    {"title": "Baldur's Gate 3", "year": "2023", "dev": "Larian Studios",
+     "desc": "Эталон современных CRPG с невероятной свободой выбора.",
+     "genres": ["Ролевая игра", "Стратегия"]},
+    {"title": "Red Dead Redemption 2", "year": "2018", "dev": "Rockstar Games",
+     "desc": "Самый живой открытый мир и история о Диком Западе.",
+     "genres": ["Экшен", "Приключение"]},
+    {"title": "God of War", "year": "2018", "dev": "Santa Monica Studio",
+     "desc": "Эпичные сражения с богами и трогательная история отца и сына.",
+     "genres": ["Экшен", "Приключение"]},
+    {"title": "Hollow Knight", "year": "2017", "dev": "Team Cherry",
+     "desc": "Шедевр метроидвании в красивом рисованном стиле.",
+     "genres": ["Приключение", "Инди"]},
+    {"title": "Hades", "year": "2020", "dev": "Supergiant Games",
+     "desc": "Рогалик о побеге из преисподней с божественным стилем.",
+     "genres": ["Экшен", "Инди"]},
+    {"title": "Celeste", "year": "2018", "dev": "Maddy Makes Games",
+     "desc": "Сложный и трогательный платформер о преодолении себя.",
+     "genres": ["Платформер", "Инди"]},
+    {"title": "Stardew Valley", "year": "2016", "dev": "ConcernedApe",
+     "desc": "Уютный симулятор фермы, созданный одним человеком.",
+     "genres": ["Симулятор", "Инди"]},
+    {"title": "Portal 2", "year": "2011", "dev": "Valve",
+     "desc": "Гениальные головоломки с порталами и блестящий юмор.",
+     "genres": ["Головоломка", "Шутер"]},
+    {"title": "Half-Life 2", "year": "2004", "dev": "Valve",
+     "desc": "Легендарный шутер, изменивший индустрию навсегда.",
+     "genres": ["Шутер", "Приключение"]},
+    {"title": "Dark Souls", "year": "2011", "dev": "FromSoftware",
+     "desc": "Игра, давшая имя целому жанру. Prepare to die.",
+     "genres": ["Ролевая игра", "Экшен"]},
+    {"title": "Mass Effect 2", "year": "2010", "dev": "BioWare",
+     "desc": "Космическая опера, где решения действительно имеют значение.",
+     "genres": ["Ролевая игра", "Шутер"]},
+    {"title": "BioShock", "year": "2007", "dev": "Irrational Games",
+     "desc": "Философский шутер в подводном городе Восторг.",
+     "genres": ["Шутер", "Приключение"]},
+    {"title": "Disco Elysium", "year": "2019", "dev": "ZA/UM",
+     "desc": "Революционная RPG без боёв, где сражаются диалогами.",
+     "genres": ["Ролевая игра", "Приключение"]},
+    {"title": "DOOM Eternal", "year": "2020", "dev": "id Software",
+     "desc": "Балет насилия под тяжёлый метал. Быстрее, злее, яростнее.",
+     "genres": ["Шутер", "Экшен"]},
+    {"title": "Cuphead", "year": "2017", "dev": "StudioMDHR",
+     "desc": "Беги и стреляй в стиле мультфильмов 1930-х. Рисовалось вручную.",
+     "genres": ["Экшен", "Инди"]},
+    {"title": "Undertale", "year": "2015", "dev": "Toby Fox",
+     "desc": "RPG, где не обязательно никого убивать. Ломает четвёртую стену.",
+     "genres": ["Ролевая игра", "Инди"]},
+    {"title": "Terraria", "year": "2011", "dev": "Re-Logic",
+     "desc": "2D-песочница с огромной глубиной и боссами.",
+     "genres": ["Песочница", "Приключение"]},
+    {"title": "Minecraft", "year": "2011", "dev": "Mojang",
+     "desc": "Самая продаваемая игра в истории — бесконечный холст для творчества.",
+     "genres": ["Песочница", "Приключение"]},
+    {"title": "Cyberpunk 2077", "year": "2020", "dev": "CD Projekt RED",
+     "desc": "Иммерсивная RPG в мегаполисе будущего. Найт-Сити ждёт.",
+     "genres": ["Ролевая игра", "Экшен"]},
+    {"title": "Sekiro: Shadows Die Twice", "year": "2019", "dev": "FromSoftware",
+     "desc": "Отточенный бой на клинках в Японии эпохи сэгоку.",
+     "genres": ["Экшен", "Приключение"]},
+    {"title": "Outer Wilds", "year": "2019", "dev": "Mobius Digital",
+     "desc": "Космическое приключение с петлёй времени. Шедевр геймдизайна.",
+     "genres": ["Приключение", "Головоломка"]},
+    {"title": "Slay the Spire", "year": "2019", "dev": "MegaCrit",
+     "desc": "Карточный рогалик, установивший стандарт жанра.",
+     "genres": ["Стратегия", "Инди"]},
+]
+
 GENRE_TAG_MAP = {
     "Экшен": "Action", "Action": "Action",
     "Ролевая игра": "RPG", "RPG": "RPG",
@@ -58,8 +134,7 @@ STEAM_SOURCES = [
 ]
 
 
-# === НАДЁЖНЫЙ ЗАПРОС С ПОВТОРАМИ (спасает от таймаутов RAWG) ===
-def fetch_json(url, headers=None, timeout=20, retries=3):
+def fetch_json(url, headers=None, timeout=25, retries=4):
     last_error = None
     for attempt in range(1, retries + 1):
         try:
@@ -174,7 +249,19 @@ def build_inline_buttons(slug, trailer_url, title):
     return {"inline_keyboard": rows}
 
 
-# === RAWG: ИГРА ДНЯ + СКРИНШОТ + ТРЕЙЛЕР (с повторами и анти-дублем) ===
+def get_fallback_game():
+    idx = datetime.now().timetuple().tm_yday % len(FALLBACK_GAMES)
+    fb = FALLBACK_GAMES[idx]
+    return {
+        "title": fb["title"], "year": fb["year"], "rating": "N/A",
+        "metacritic": None, "playtime": None, "added": None,
+        "reviews_count": None, "dev": fb["dev"], "publisher": "",
+        "genres_str": ", ".join(fb["genres"]), "genres_list": fb["genres"],
+        "platforms_str": "PC", "desc": fb["desc"],
+        "image": None, "slug": "", "trailer": "",
+    }
+
+
 def get_rawg_game_data():
     print("Запрашиваем игру дня из RAWG.io...")
     try:
@@ -286,20 +373,10 @@ def get_rawg_game_data():
             "image": image_url, "slug": slug, "trailer": trailer_url,
         }
     except Exception as e:
-        print(f"Ошибка RAWG API: {e}. Запасной вариант.")
+        print(f"Ошибка RAWG API: {e}. Берём запасную игру дня.")
         SOURCE_STATUS["rawg"] = "⚠️"
-        WARNINGS.append(f"RAWG недоступен, использован запасной пост: {e}")
-        return {
-            "title": "Minecraft", "year": "2011", "rating": "4.4",
-            "metacritic": 93, "playtime": 48, "added": 250000,
-            "reviews_count": 5000, "dev": "Mojang Studios",
-            "publisher": "Xbox Game Studios",
-            "genres_str": "песочница, приключение",
-            "genres_list": ["Песочница", "Приключение"],
-            "platforms_str": "PC, PlayStation, Xbox, Nintendo Switch",
-            "desc": "Самая продаваемая игра в истории — бесконечный холст для творчества.",
-            "image": None, "slug": "minecraft", "trailer": "",
-        }
+        WARNINGS.append(f"RAWG недоступен, использована запасная игра дня: {e}")
+        return get_fallback_game()
 
 
 def build_game_caption(data):
@@ -534,49 +611,157 @@ def get_youtube_videos(limit=3):
     return videos[:limit]
 
 
+# === ХАЛЯВА СО ВСЕХ ПЛОЩАДОК (PC + мобильные) ===
+def check_other_platforms():
+    print("Проверяем халяву (Steam, GOG, консоли, Android, iOS)...")
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        subreddits = [
+            "FreeGameFindings",
+            "FreeGamesOnSteam",
+            "AppHookup",
+            "GameDealsFree",
+        ]
+        freebies = []
+        for sub in subreddits:
+            url = f"https://www.reddit.com/r/{sub}/hot.json?limit=12"
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code != 200:
+                continue
+            posts = r.json().get("data", {}).get("children", [])
+            for post in posts:
+                pdata = post["data"]
+                title = pdata["title"]
+                link = "https://reddit.com" + pdata["permalink"]
+                pattern = r'\b(free|giveaway|100%|раздача)\b'
+                if re.search(pattern, title, re.IGNORECASE):
+                    clean_title = title.strip()
+                    already_added = any(item['link'] == link for item in freebies)
+                    if not already_added:
+                        freebies.append({"title": clean_title, "link": link})
+        return freebies[:5]
+    except Exception as e:
+        print(f"Ошибка Reddit (халява): {e}")
+        return []
+
+
+# === СКИДКИ НА ВСЕХ ПЛАТФОРМАХ (r/GameDeals) ===
+def check_discounts():
+    print("Проверяем скидки на всех платформах...")
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        url = "https://www.reddit.com/r/GameDeals/hot.json?limit=15"
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code != 200:
+            return []
+        posts = r.json().get("data", {}).get("children", [])
+        deals = []
+        for post in posts:
+            pdata = post["data"]
+            title = pdata["title"]
+            link = "https://reddit.com" + pdata["permalink"]
+            score = pdata["score"]
+            # берём только реальные скидки (есть % или стрелка цены)
+            if re.search(r'(%|off|->|−)', title, re.IGNORECASE):
+                deals.append({"title": title.strip(), "link": link, "score": score})
+        # самые популярные скидки — сверху
+        deals.sort(key=lambda x: x["score"], reverse=True)
+        return deals[:6]
+    except Exception as e:
+        print(f"Ошибка Reddit (скидки): {e}")
+        return []
+
+
+def check_epic():
+    print("Проверяем Epic Games...")
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        url = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
+        r = requests.get(url, headers=headers, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        elements = []
+        catalog = data.get("data", {})
+        if catalog:
+            search_store = catalog.get("Catalog", {}).get("searchStore", {})
+            elements = search_store.get("elements", []) or []
+        free_games = []
+        for el in elements:
+            if not isinstance(el, dict):
+                continue
+            price_info = el.get("price", {}).get("totalPrice", {}) or {}
+            if price_info.get("discountPrice", 999999) == 0:
+                free_games.append(el)
+        SOURCE_STATUS["epic"] = "✅"
+        return free_games
+    except Exception as e:
+        print(f"Ошибка Epic API: {e}")
+        SOURCE_STATUS["epic"] = "⚠️"
+        WARNINGS.append(f"Epic Games API недоступен: {e}")
+        return []
+
+
+# === ПУБЛИКАЦИЯ В КАНАЛ ХАЛЯВЫ (халява + скидки отдельными постами) ===
 def publish_drops():
     epic_games = check_epic()
     other_freebies = check_other_platforms()
+    discounts = check_discounts()
 
-    if not epic_games and not other_freebies:
+    has_freebies = bool(epic_games) or bool(other_freebies)
+
+    # Пост 1: бесплатные раздачи
+    if has_freebies:
+        drops_msg = "🔥 <b>ГЛОБАЛЬНЫЙ СБОР ХАЛЯВЫ!</b>\n\n"
+        if epic_games:
+            drops_msg += "🟣 <b>EPIC GAMES:</b>\n"
+            for i, g in enumerate(epic_games[:3], 1):
+                title = g.get("title", "Игра")
+                price_block = g.get("price", {}).get("totalPrice", {})
+                fmt = price_block.get("fmtPrice", {})
+                price = fmt.get("originalPrice", "0") or "0"
+                drops_msg += f"  {i}. <b>{title}</b> <i>(было {price})</i>\n"
+            drops_msg += "🔗 <b>Забрать:</b> https://store.epicgames.com/ru/free-games\n\n"
+        else:
+            drops_msg += "🟣 <b>EPIC GAMES:</b>\n  <i>Сейчас нет активных раздач.</i>\n\n"
+
+        if other_freebies:
+            drops_msg += "🟢 <b>STEAM, GOG, PS, XBOX, ANDROID, iOS:</b>\n"
+            for i, item in enumerate(other_freebies, 1):
+                drops_msg += f"  {i}. <b>{item['title']}</b>\n"
+                drops_msg += f"     🔗 <a href='{item['link']}'>Ссылка на раздачу</a>\n\n"
+        else:
+            drops_msg += "🟢 <b>STEAM, GOG, PS, XBOX, ANDROID, iOS:</b>\n  <i>Свежих раздач пока нет, но мы мониторим!</i>\n\n"
+
+        drops_msg += "⏰ <i>Раздачи ограничены по времени! Забирай, пока не поздно.</i>\n\n"
+        drops_msg += "🌟 <i>Больше новостей и обзоров в @AlexPlayHub</i>"
+
+        ok = send_to_telegram(DROPS_CHANNEL_ID, drops_msg)
+        if not ok:
+            WARNINGS.append("Не удалось опубликовать халяву в Drops.")
+
+    # Пост 2: горячие скидки на всех платформах
+    if discounts:
+        disc_msg = "💸 <b>ГОРЯЧИЕ СКИДКИ НА ВСЕХ ПЛАТФОРМАХ!</b>\n\n"
+        for i, d in enumerate(discounts, 1):
+            disc_msg += f"  {i}. <b>{d['title']}</b>\n"
+            disc_msg += f"     🔗 <a href='{d['link']}'>Ссылка на скидку</a>\n\n"
+        disc_msg += "⏰ <i>Скидки ограничены по времени!</i>\n"
+        disc_msg += "🎁 <i>А бесплатные игры — в этом же канале 😉</i>"
+
+        ok2 = send_to_telegram(DROPS_CHANNEL_ID, disc_msg)
+        if not ok2:
+            WARNINGS.append("Не удалось опубликовать скидки в Drops.")
+
+    # Если нет ни халявы, ни скидок
+    if not has_freebies and not discounts:
         drops_msg = (
             "🤖 <b>Тишина в эфире!</b>\n\n"
-            "Сегодня крупных раздач не найдено. "
+            "Сегодня раздач и крупных скидок не найдено. "
             "Но мы продолжаем следить 24/7! 🔔\n\n"
             "Следи за обновлениями в @AlexPlayDrops"
         )
-        ok = send_to_telegram(DROPS_CHANNEL_ID, drops_msg)
-        if not ok:
-            WARNINGS.append("Не удалось опубликовать пост в Drops.")
-        return
+        send_to_telegram(DROPS_CHANNEL_ID, drops_msg)
 
-    drops_msg = "🔥 <b>ГЛОБАЛЬНЫЙ СБОР ХАЛЯВЫ!</b>\n\n"
-    if epic_games:
-        drops_msg += "🟣 <b>EPIC GAMES:</b>\n"
-        for i, g in enumerate(epic_games[:3], 1):
-            title = g.get("title", "Игра")
-            price_block = g.get("price", {}).get("totalPrice", {})
-            fmt = price_block.get("fmtPrice", {})
-            price = fmt.get("originalPrice", "0") or "0"
-            drops_msg += f"  {i}. <b>{title}</b> <i>(было {price})</i>\n"
-        drops_msg += "🔗 <b>Забрать:</b> https://store.epicgames.com/ru/free-games\n\n"
-    else:
-        drops_msg += "🟣 <b>EPIC GAMES:</b>\n  <i>Сейчас нет активных раздач.</i>\n\n"
-
-    if other_freebies:
-        drops_msg += "🟢 <b>STEAM, GOG, PS, XBOX, ANDROID, iOS:</b>\n"
-        for i, item in enumerate(other_freebies, 1):
-            drops_msg += f"  {i}. <b>{item['title']}</b>\n"
-            drops_msg += f"     🔗 <a href='{item['link']}'>Ссылка на раздачу</a>\n\n"
-    else:
-        drops_msg += "🟢 <b>STEAM, GOG, PS, XBOX, ANDROID, iOS:</b>\n  <i>Свежих раздач пока нет, но мы мониторим!</i>\n\n"
-
-    drops_msg += "⏰ <i>Раздачи ограничены по времени! Забирай, пока не поздно.</i>\n\n"
-    drops_msg += "🌟 <i>Больше новостей и обзоров в @AlexPlayHub</i>"
-
-    ok = send_to_telegram(DROPS_CHANNEL_ID, drops_msg)
-    if not ok:
-        WARNINGS.append("Не удалось опубликовать пост в Drops.")
     print("Контент для @AlexPlayDrops опубликован!")
 
 
@@ -649,68 +834,6 @@ def publish_hub_video():
     else:
         print("Трейлеров нет, пропускаем.")
     print("Трейлеры обработаны!")
-
-
-def check_epic():
-    print("Проверяем Epic Games...")
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        url = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
-        r = requests.get(url, headers=headers, timeout=15)
-        r.raise_for_status()
-        data = r.json()
-        elements = []
-        catalog = data.get("data", {})
-        if catalog:
-            search_store = catalog.get("Catalog", {}).get("searchStore", {})
-            elements = search_store.get("elements", []) or []
-        free_games = []
-        for el in elements:
-            if not isinstance(el, dict):
-                continue
-            price_info = el.get("price", {}).get("totalPrice", {}) or {}
-            if price_info.get("discountPrice", 999999) == 0:
-                free_games.append(el)
-        SOURCE_STATUS["epic"] = "✅"
-        return free_games
-    except Exception as e:
-        print(f"Ошибка Epic API: {e}")
-        SOURCE_STATUS["epic"] = "⚠️"
-        WARNINGS.append(f"Epic Games API недоступен: {e}")
-        return []
-
-
-def check_other_platforms():
-    print("Проверяем другие площадки (Steam, GOG, консоли, Android, iOS)...")
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        subreddits = [
-            "FreeGameFindings",
-            "FreeGamesOnSteam",
-            "AppHookup",
-            "GameDealsFree",
-        ]
-        freebies = []
-        for sub in subreddits:
-            url = f"https://www.reddit.com/r/{sub}/hot.json?limit=12"
-            r = requests.get(url, headers=headers, timeout=10)
-            if r.status_code != 200:
-                continue
-            posts = r.json().get("data", {}).get("children", [])
-            for post in posts:
-                pdata = post["data"]
-                title = pdata["title"]
-                link = "https://reddit.com" + pdata["permalink"]
-                pattern = r'\b(free|giveaway|100%|раздача)\b'
-                if re.search(pattern, title, re.IGNORECASE):
-                    clean_title = title.strip()
-                    already_added = any(item['link'] == link for item in freebies)
-                    if not already_added:
-                        freebies.append({"title": clean_title, "link": link})
-        return freebies[:8]
-    except Exception as e:
-        print(f"Ошибка Reddit (халява): {e}")
-        return []
 
 
 def send_alert():
