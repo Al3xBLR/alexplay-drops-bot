@@ -19,41 +19,72 @@ if not all([BOT_TOKEN, DROPS_CHANNEL_ID, HUB_CHANNEL_ID]):
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 TELEGRAM_PHOTO_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
 
+# Cache для предотвращения дублей (в памяти)
+SEEN_ITEMS = {}
+
 SCHEDULE = {
-    9: "drops",        # 12:00 МСК - халява
-    12: "hub_news",    # 15:00 МСК - новости
-    15: "hub_gp",      # 18:00 МСК - Game Pass
-    18: "hub_deals",   # 21:00 МСК - скидки
-    21: "hub_video"    # 00:00 МСК - трейлеры
+    9: "drops",
+    12: "hub_news",
+    15: "hub_gp",
+    18: "hub_deals",
+    21: "hub_video"
 }
 
 WARNINGS = []
 SOURCE_STATUS = {
-    "epic": "—", "gamerpower": "—", "gamepass": "—",
-    "deals": "—", "news_ru": "—", "news_en": "—", "youtube": "—"
+    "epic": "—", "gamerpower": "—", "mobile": "—",
+    "gamepass": "—", "deals": "—", "news": "—", "youtube": "—"
 }
 
-# === НАДЁЖНЫЙ HTTP ЗАПРОС ===
+# === ПЕРЕВОД НА РУССКИЙ ===
+def translate_to_ru(text):
+    if not text:
+        return ""
+    try:
+        url = "https://translate.googleapis.com/translate_a/single"
+        params = {"client": "gtx", "sl": "en", "tl": "ru", "dt": "t", "q": text[:500]}
+        r = requests.get(url, params=params, timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            result = "".join([seg[0] for seg in data[0] if seg and seg[0]])
+            return result
+    except:
+        pass
+    return text
+
+
+# === ПРОВЕРКА НА ДУБЛИ ===
+def is_duplicate(item_id):
+    now = time.time()
+    # Очищаем старые записи (>24 часов)
+    SEEN_ITEMS = {k: v for k, v in SEEN_ITEMS.items() if now - v < 86400}
+    
+    if item_id in SEEN_ITEMS:
+        return True
+    SEEN_ITEMS[item_id] = now
+    return False
+
+
+# === НАДЁЖНЫЙ ЗАПРОС ===
 def safe_request(url, timeout=15, retries=3):
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     for i in range(retries):
         try:
             r = requests.get(url, headers=headers, timeout=timeout)
             if r.status_code == 200:
                 return r
-        except Exception as e:
+        except:
             if i < retries - 1:
                 time.sleep(2)
     return None
 
 
-# === ХАЛЯВА С КАРТИНКАМИ ===
+# === ХАЛЯВА (ВСЕ ПЛАТФОРМЫ + ПЕРЕВОД) ===
 def get_freebies():
-    print(" Сбор бесплатных игр...")
+    print("🎁 Сбор бесплатных игр...")
     freebies = []
-    seen = set()
     
-    # Epic Games
+    # 1. Epic Games
     r = safe_request("https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions")
     if r:
         try:
@@ -62,18 +93,24 @@ def get_freebies():
             for el in elements:
                 if el.get("price", {}).get("totalPrice", {}).get("discountPrice", 999999) == 0:
                     title = el.get("title", "")
-                    if title and title not in seen:
-                        seen.add(title)
+                    item_id = f"epic_{title}"
+                    
+                    if title and not is_duplicate(item_id):
+                        # Извлекаем картинку
                         image = None
                         if el.get("keyImages"):
                             for img in el["keyImages"]:
-                                if img.get("type") == "DieselStoreFrontWide":
+                                if img.get("type") in ["DieselStoreFrontWide", "OfferImageWide"]:
                                     image = img.get("url")
                                     break
+                        
+                        desc = el.get("description", "") or el.get("seller", {}).get("name", "Бесплатно в Epic Games Store")
+                        desc_ru = translate_to_ru(desc)[:250]
+                        
                         freebies.append({
                             "platform": "Epic Games",
                             "title": title,
-                            "desc": el.get("description", "Бесплатно в Epic Games Store")[:250],
+                            "desc": desc_ru,
                             "image": image,
                             "link": "https://store.epicgames.com/ru/free-games"
                         })
@@ -82,18 +119,23 @@ def get_freebies():
             print(f"Epic error: {e}")
             SOURCE_STATUS["epic"] = "⚠️"
     
-    # GamerPower
+    # 2. GamerPower (PC + Console)
     r = safe_request("https://www.gamerpower.com/api/giveaways?type=game")
     if r:
         try:
-            for g in r.json()[:10]:
+            for g in r.json():
                 title = g.get("title", "")
-                if title and title not in seen:
-                    seen.add(title)
+                platform = g.get("platforms", "PC")
+                item_id = f"gp_{title}_{platform}"
+                
+                if title and not is_duplicate(item_id):
+                    desc = g.get("description", "Бесплатная игра")
+                    desc_ru = translate_to_ru(desc)[:250]
+                    
                     freebies.append({
-                        "platform": g.get("platforms", "PC"),
+                        "platform": platform,
                         "title": title,
-                        "desc": g.get("description", "Бесплатная игра")[:250],
+                        "desc": desc_ru,
                         "image": g.get("thumbnail"),
                         "link": g.get("open_giveaway_url", "")
                     })
@@ -102,6 +144,31 @@ def get_freebies():
             print(f"GamerPower error: {e}")
             SOURCE_STATUS["gamerpower"] = "⚠️"
     
+    # 3. Мобильные игры (Android + iOS)
+    for mobile_type in ["android", "ios"]:
+        r = safe_request(f"https://www.gamerpower.com/api/giveaways?type=game&platform={mobile_type}")
+        if r:
+            try:
+                for g in r.json():
+                    title = g.get("title", "")
+                    platform = g.get("platforms", mobile_type.upper())
+                    item_id = f"mobile_{title}_{platform}"
+                    
+                    if title and not is_duplicate(item_id):
+                        desc = g.get("description", "Бесплатная мобильная игра")
+                        desc_ru = translate_to_ru(desc)[:250]
+                        
+                        freebies.append({
+                            "platform": f"📱 {platform}",
+                            "title": title,
+                            "desc": desc_ru,
+                            "image": g.get("thumbnail"),
+                            "link": g.get("open_giveaway_url", "")
+                        })
+                SOURCE_STATUS["mobile"] = "✅"
+            except:
+                SOURCE_STATUS["mobile"] = "⚠️"
+    
     return freebies
 
 
@@ -109,24 +176,38 @@ def get_freebies():
 def get_gamepass():
     print("🎮 Сбор Game Pass...")
     games = []
+    headers = {"User-Agent": "Mozilla/5.0"}
     
     # Reddit r/XboxGamePass
-    headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        r = requests.get("https://www.reddit.com/r/XboxGamePass/hot.json?limit=15", 
+        r = requests.get("https://www.reddit.com/r/XboxGamePass/hot.json?limit=20", 
                         headers=headers, timeout=10)
         if r.status_code == 200:
             posts = r.json().get("data", {}).get("children", [])
             for post in posts:
                 p = post["data"]
                 title = p["title"]
-                if any(x in title.lower() for x in ["coming", "new", "added", "june", "july", "august"]):
-                    games.append({
-                        "title": title,
-                        "desc": "Скоро или уже в Game Pass",
-                        "image": p.get("thumbnail") if p.get("thumbnail") and not p.get("thumbnail").startswith("self") else None,
-                        "link": "https://reddit.com" + p["permalink"]
-                    })
+                item_id = f"gp_reddit_{title}"
+                
+                # Фильтр: только новые игры
+                if any(x in title.lower() for x in ["coming", "new", "added", "june", "july", "august", "september"]):
+                    if not is_duplicate(item_id):
+                        # Извлекаем картинку
+                        thumb = p.get("thumbnail", "")
+                        image = thumb if thumb and thumb.startswith("http") else None
+                        
+                        # Если нет картинки, пробуем preview
+                        if not image and p.get("preview"):
+                            imgs = p["preview"].get("images", [])
+                            if imgs:
+                                image = imgs[0].get("source", {}).get("url")
+                        
+                        games.append({
+                            "title": title,
+                            "desc": "Скоро или уже в Xbox Game Pass",
+                            "image": image,
+                            "link": "https://reddit.com" + p["permalink"]
+                        })
         SOURCE_STATUS["gamepass"] = "✅"
     except Exception as e:
         print(f"GamePass error: {e}")
@@ -139,10 +220,9 @@ def get_gamepass():
 def get_all_deals():
     print("💸 Сбор скидок...")
     deals = []
-    seen = set()
     
-    # CheapShark Steam
-    r = safe_request("https://www.cheapshark.com/api/1.0/deals?storeID=1&discount=50&pageSize=10")
+    # 1. Steam (CheapShark)
+    r = safe_request("https://www.cheapshark.com/api/1.0/deals?storeID=1&discount=50&pageSize=15")
     if r:
         try:
             for d in r.json():
@@ -150,8 +230,9 @@ def get_all_deals():
                 steam_id = d.get("steamAppID", "")
                 link = f"https://store.steampowered.com/app/{steam_id}/" if steam_id else ""
                 savings = int(float(d.get("savings", 0)))
-                if title and link and link not in seen and savings >= 50:
-                    seen.add(link)
+                item_id = f"steam_{steam_id}"
+                
+                if title and link and not is_duplicate(item_id) and savings >= 50:
                     deals.append({
                         "platform": "Steam",
                         "title": title,
@@ -162,11 +243,17 @@ def get_all_deals():
             SOURCE_STATUS["deals"] = "✅"
         except Exception as e:
             print(f"CheapShark error: {e}")
-            SOURCE_STATUS["deals"] = "️"
+            SOURCE_STATUS["deals"] = "⚠️"
     
-    # Reddit GameDeals
+    # 2. Reddit GameDeals (все платформы)
     headers = {"User-Agent": "Mozilla/5.0"}
-    queries = [("xbox", "Xbox"), ("playstation", "PlayStation"), ("switch", "Nintendo Switch")]
+    queries = [
+        ("xbox OR gamepass", "Xbox"),
+        ("playstation OR psn", "PlayStation"),
+        ("switch", "Nintendo Switch"),
+        ("gog", "GOG"),
+        ("humble", "Humble Bundle")
+    ]
     
     for query, platform in queries:
         try:
@@ -177,15 +264,16 @@ def get_all_deals():
                     p = post["data"]
                     title = p["title"]
                     link = "https://reddit.com" + p["permalink"]
+                    item_id = f"reddit_{link}"
                     
-                    if "expired" in title.lower() or link in seen:
+                    if "expired" in title.lower() or is_duplicate(item_id):
                         continue
                     
+                    # Извлекаем процент скидки
                     m = re.search(r'-\s*(\d{1,3})\s*%', title)
                     discount = int(m.group(1)) if m else 50
                     
                     if discount >= 40:
-                        seen.add(link)
                         deals.append({
                             "platform": platform,
                             "title": re.sub(r'^\[[^\]]*\]\s*', '', title),
@@ -193,66 +281,84 @@ def get_all_deals():
                             "image": None,
                             "link": link
                         })
-        except: pass
+        except Exception as e:
+            print(f"Reddit {query} error: {e}")
     
     deals.sort(key=lambda x: x.get("platform", "") == "Steam", reverse=True)
-    return deals[:10]
+    return deals[:12]
 
 
-# === НОВОСТИ (РУССКИЕ + АНГЛИЙСКИЕ ИСТОЧНИКИ) ===
+# === НОВОСТИ С КАРТИНКАМИ ===
 def get_all_news():
-    print("📰 Сбор новостей...")
+    print(" Сбор новостей...")
     news = []
-    headers = {"User-Agent": "Mozilla/5.0"}
     
-    # Русские источники
+    # 1. Reddit r/games (с картинками)
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        r = requests.get("https://www.reddit.com/r/games/hot.json?limit=25", 
+                        headers=headers, timeout=10)
+        if r.status_code == 200:
+            posts = r.json().get("data", {}).get("children", [])
+            for post in posts:
+                p = post["data"]
+                title = p["title"]
+                item_id = f"news_{p['id']}"
+                
+                if is_duplicate(item_id):
+                    continue
+                
+                # Извлекаем картинку
+                image = None
+                thumb = p.get("thumbnail", "")
+                
+                if thumb and thumb.startswith("http"):
+                    image = thumb
+                elif p.get("preview"):
+                    imgs = p["preview"].get("images", [])
+                    if imgs:
+                        image = imgs[0].get("source", {}).get("url")
+                
+                # Пропускаем посты без картинок
+                if image:
+                    news.append({
+                        "title": title,
+                        "desc": "",
+                        "link": "https://reddit.com" + p["permalink"],
+                        "source": "Reddit r/games",
+                        "image": image
+                    })
+        SOURCE_STATUS["news"] = "✅"
+    except Exception as e:
+        print(f"Reddit news error: {e}")
+        SOURCE_STATUS["news"] = "⚠️"
+    
+    # 2. Русские RSS (без картинок, но с описаниями)
     ru_sources = [
         {"name": "DTF", "url": "https://dtf.ru/rss"},
         {"name": "StopGame", "url": "https://stopgame.ru/rss/news"},
-        {"name": "3DNews", "url": "https://3dnews.ru/games/rss"},
-        {"name": "Kanobu", "url": "https://www.kanobu.ru/rss/news/"}
+        {"name": "3DNews", "url": "https://3dnews.ru/games/rss"}
     ]
     
     for src in ru_sources:
         try:
             feed = feedparser.parse(src["url"])
-            for entry in feed.entries[:3]:
-                if hasattr(entry, "published_parsed") and entry.published_parsed:
-                    pub = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
-                    if (datetime.now(timezone.utc) - pub) < timedelta(hours=48):
-                        news.append({
-                            "title": f"{entry.title}",
-                            "desc": entry.get("summary", "")[:200] if entry.get("summary") else "",
-                            "link": entry.link,
-                            "source": src["name"],
-                            "image": None,
-                            "lang": "ru"
-                        })
-            SOURCE_STATUS["news_ru"] = "✅"
+            for entry in feed.entries[:2]:
+                title = entry.get("title", "")
+                item_id = f"news_{src['name']}_{entry.get('link', '')}"
+                
+                if is_duplicate(item_id):
+                    continue
+                
+                news.append({
+                    "title": title,
+                    "desc": entry.get("summary", "")[:200] if entry.get("summary") else "",
+                    "link": entry.link,
+                    "source": src["name"],
+                    "image": None
+                })
         except Exception as e:
             print(f"RSS {src['name']} error: {e}")
-            SOURCE_STATUS["news_ru"] = "⚠️"
-    
-    # Reddit r/games
-    try:
-        r = requests.get("https://www.reddit.com/r/games/hot.json?limit=20", 
-                        headers=headers, timeout=10)
-        if r.status_code == 200:
-            for post in r.json().get("data", {}).get("children", [])[:5]:
-                p = post["data"]
-                thumb = p.get("thumbnail", "")
-                news.append({
-                    "title": p["title"],
-                    "desc": "",
-                    "link": "https://reddit.com" + p["permalink"],
-                    "source": "Reddit r/games",
-                    "image": thumb if thumb and thumb.startswith("http") else None,
-                    "lang": "en"
-                })
-            SOURCE_STATUS["news_en"] = "✅"
-    except Exception as e:
-        print(f"Reddit error: {e}")
-        SOURCE_STATUS["news_en"] = "⚠️"
     
     # Сортировка: сначала с картинками
     news.sort(key=lambda x: 0 if x.get("image") else 1)
@@ -288,8 +394,9 @@ def get_youtube_videos():
 
 # === ОТПРАВКА КРАСИВОГО ПОСТА ===
 def send_beautiful_post(chat_id, item, post_type="free"):
+    # Определяем тип поста
     if post_type == "free":
-        emoji = "🎁"
+        emoji = ""
         btn_text = " ЗАБРАТЬ БЕСПЛАТНО"
     elif post_type == "gamepass":
         emoji = "🎮"
@@ -298,16 +405,26 @@ def send_beautiful_post(chat_id, item, post_type="free"):
         emoji = "💸"
         btn_text = "🛒 КУПИТЬ"
     
+    # Формируем текст
     text = f"{emoji} <b>{item['title']}</b>\n\n"
+    
     if item.get("desc"):
-        text += f" <i>{item['desc']}</i>\n\n"
-    text += f" <b>Платформа:</b> {item.get('platform', 'PC')}\n\n"
-    text += f"<a href='{item['link']}'>{btn_text}</a>"
+        text += f"📝 <i>{item['desc']}</i>\n\n"
     
-    # YouTube ссылка
+    text += f"🖥 <b>Платформа:</b> {item.get('platform', 'PC')}\n\n"
+    text += f"<a href='{item['link']}'>{btn_text}</a>\n"
+    
+    # YouTube кнопка
     yt_query = item["title"].replace(" ", "+")
-    text += f" | <a href='https://www.youtube.com/results?search_query={yt_query}'>🎬 Геймплей</a>"
+    text += f"<a href='https://www.youtube.com/results?search_query={yt_query}'>🎬 Геймплей</a>\n\n"
     
+    # РЕКЛАМА КАНАЛА
+    text += "━━━━━━━━━━━━━━━\n"
+    text += "<b>🎮 AlexPlay — твой игровой помощник!</b>\n"
+    text += "💰 @AlexPlayDrops — халява и скидки\n"
+    text += "📰 @AlexPlayHub — новости и обзоры"
+    
+    # Отправляем с картинкой или без
     send_to_telegram(chat_id, text, item.get("image"))
 
 
@@ -350,7 +467,7 @@ def publish_drops():
     freebies = get_freebies()
     for fb in freebies:
         send_beautiful_post(DROPS_CHANNEL_ID, fb, "free")
-        time.sleep(1)
+        time.sleep(2)  # Пауза чтобы не спамить
     print(f"✅ Drops: {len(freebies)} игр")
 
 
@@ -358,7 +475,7 @@ def publish_hub_gp():
     games = get_gamepass()
     for g in games:
         send_beautiful_post(HUB_CHANNEL_ID, g, "gamepass")
-        time.sleep(1)
+        time.sleep(2)
     print(f"✅ GamePass: {len(games)} игр")
 
 
@@ -366,7 +483,7 @@ def publish_hub_deals():
     deals = get_all_deals()
     for d in deals:
         send_beautiful_post(HUB_CHANNEL_ID, d, "deal")
-        time.sleep(1)
+        time.sleep(2)
     print(f"✅ Deals: {len(deals)} скидок")
 
 
@@ -376,9 +493,14 @@ def publish_hub_news():
         text = f"📰 <b>НОВОСТЬ</b>\n\n{n['title']}\n\n"
         if n.get("desc"):
             text += f"📝 <i>{n['desc']}</i>\n\n"
-        text += f"🔗 <a href='{n['link']}'>Читать ({n['source']})</a>"
+        text += f" <a href='{n['link']}'>Читать ({n['source']})</a>\n\n"
+        text += "━━━━━━━━━━━━━━━\n"
+        text += "<b>🎮 AlexPlay — твой игровой помощник!</b>\n"
+        text += "💰 @AlexPlayDrops — халява и скидки\n"
+        text += "📰 @AlexPlayHub — новости и обзоры"
+        
         send_to_telegram(HUB_CHANNEL_ID, text, n.get("image"))
-        time.sleep(1)
+        time.sleep(2)
     print(f"✅ News: {len(news)} новостей")
 
 
@@ -388,7 +510,11 @@ def publish_hub_video():
         msg = "🎬 <b>СВЕЖИЕ ТРЕЙЛЕРЫ</b>\n\n"
         for i, v in enumerate(videos, 1):
             msg += f"{i}. <a href='{v['link']}'>{v['title']}</a> <i>({v['source']})</i>\n\n"
-        msg += "\n🔔 <i>Подпишись на @AlexPlayDrops — там халява!</i>"
+        msg += "\n━━━━━━━━━━━━━━━\n"
+        msg += "<b> AlexPlay — твой игровой помощник!</b>\n"
+        msg += "💰 @AlexPlayDrops — халява и скидки\n"
+        msg += "📰 @AlexPlayHub — новости и обзоры"
+        
         send_to_telegram(HUB_CHANNEL_ID, msg)
     print(f"✅ Video: {len(videos)} трейлеров")
 
@@ -397,9 +523,9 @@ def publish_hub_video():
 def send_pulse():
     if not CHAT_ID:
         return
-    msg = f"📊 <b>ОТЧЁТ ALEXPLAY</b>\n {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
-    msg += f"👥 <b>@AlexPlayHub:</b> {get_chat_members(HUB_CHANNEL_ID)}\n"
-    msg += f" <b>@AlexPlayDrops:</b> {get_chat_members(DROPS_CHANNEL_ID)}\n\n"
+    msg = f" <b>ОТЧЁТ ALEXPLAY</b>\n {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
+    msg += f" <b>@AlexPlayHub:</b> {get_chat_members(HUB_CHANNEL_ID)}\n"
+    msg += f"👥 <b>@AlexPlayDrops:</b> {get_chat_members(DROPS_CHANNEL_ID)}\n\n"
     msg += "🛰 <b>СТАТУС:</b>\n"
     for k, v in SOURCE_STATUS.items():
         msg += f"• {k.upper()}: {v}\n"
