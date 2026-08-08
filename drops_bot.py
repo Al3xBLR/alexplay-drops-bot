@@ -157,7 +157,6 @@ def build_inline_buttons(slug, trailer_url, title):
     return {"inline_keyboard": rows}
 
 
-# === RAWG: ИГРА ДНЯ + СКРИНШОТ + ТРЕЙЛЕР (анти-дубль) ===
 def get_rawg_game_data():
     print("Запрашиваем игру дня из RAWG.io...")
     try:
@@ -191,7 +190,6 @@ def get_rawg_game_data():
         detail_r = requests.get(detail_url, headers=headers, timeout=10)
         detail = detail_r.json()
 
-        # --- ТРЕЙЛЕР: urls -> video_id -> ID из превью ---
         trailer_url = ""
         try:
             movies_url = f"https://api.rawg.io/api/games/{game['id']}/movies?key={RAWG_API_KEY}"
@@ -218,7 +216,6 @@ def get_rawg_game_data():
         except Exception as e:
             print(f"Трейлер не найден: {e}")
 
-        # --- СКРИНШОТ/ОБЛОЖКА: background_image -> первый скриншот ---
         image_url = detail.get("background_image") or game.get("background_image")
         if not image_url:
             try:
@@ -301,7 +298,6 @@ def build_game_caption(data):
     msg += "\n\n"
     msg += f"📝 <i>{data['desc']}</i>\n\n"
 
-    # Видимая строка с трейлером прямо в посте
     if data.get("trailer"):
         msg += f"🎬 <a href='{data['trailer']}'><b>Смотреть трейлер</b></a>\n\n"
     else:
@@ -555,12 +551,12 @@ def publish_drops():
         drops_msg += "🟣 <b>EPIC GAMES:</b>\n  <i>Сейчас нет активных раздач.</i>\n\n"
 
     if other_freebies:
-        drops_msg += "🟢 <b>STEAM, GOG, AMAZON, PS, XBOX:</b>\n"
+        drops_msg += "🟢 <b>STEAM, GOG, PS, XBOX, ANDROID, iOS:</b>\n"
         for i, item in enumerate(other_freebies, 1):
             drops_msg += f"  {i}. <b>{item['title']}</b>\n"
             drops_msg += f"     🔗 <a href='{item['link']}'>Ссылка на раздачу</a>\n\n"
     else:
-        drops_msg += "🟢 <b>STEAM, GOG, AMAZON, PS, XBOX:</b>\n  <i>Свежих раздач пока нет, но мы мониторим!</i>\n\n"
+        drops_msg += "🟢 <b>STEAM, GOG, PS, XBOX, ANDROID, iOS:</b>\n  <i>Свежих раздач пока нет, но мы мониторим!</i>\n\n"
 
     drops_msg += "⏰ <i>Раздачи ограничены по времени! Забирай, пока не поздно.</i>\n\n"
     drops_msg += "🌟 <i>Больше новостей и обзоров в @AlexPlayHub</i>"
@@ -671,14 +667,20 @@ def check_epic():
         return []
 
 
+# === ХАЛЯВА СО ВСЕХ ПЛОЩАДОК (PC + мобильные) ===
 def check_other_platforms():
-    print("Проверяем другие площадки...")
+    print("Проверяем другие площадки (Steam, GOG, консоли, Android, iOS)...")
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        subreddits = ["FreeGameFindings", "FreeGamesOnSteam"]
+        subreddits = [
+            "FreeGameFindings",    # PC и консоли
+            "FreeGamesOnSteam",    # Steam
+            "AppHookup",           # Android и iOS приложения/игры
+            "GameDealsFree",       # бесплатные игры на всех платформах
+        ]
         freebies = []
         for sub in subreddits:
-            url = f"https://www.reddit.com/r/{sub}/hot.json?limit=10"
+            url = f"https://www.reddit.com/r/{sub}/hot.json?limit=12"
             r = requests.get(url, headers=headers, timeout=10)
             if r.status_code != 200:
                 continue
@@ -689,11 +691,11 @@ def check_other_platforms():
                 link = "https://reddit.com" + pdata["permalink"]
                 pattern = r'\b(free|giveaway|100%|раздача)\b'
                 if re.search(pattern, title, re.IGNORECASE):
-                    clean_title = re.sub(r'^\[[^\]]*\]\s*', '', title)
+                    clean_title = title.strip()  # сохраняем теги [Android]/[iOS]/[Steam]
                     already_added = any(item['link'] == link for item in freebies)
                     if not already_added:
                         freebies.append({"title": clean_title, "link": link})
-        return freebies[:6]
+        return freebies[:8]
     except Exception as e:
         print(f"Ошибка Reddit (халява): {e}")
         return []
