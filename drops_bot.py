@@ -27,7 +27,7 @@ SOURCE_STATUS = {"epic": "—", "gamerpower": "—", "gamepass": "—", "deals":
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"}
 
 
-# === НАДЁЖНЫЙ ЗАПРОС (4 попытки, растущие паузы) ===
+# === НАДЁЖНЫЙ ЗАПРОС (4 попытки) ===
 def http_get(url, timeout=20, retries=4, as_json=True):
     for i in range(retries):
         try:
@@ -132,7 +132,7 @@ def get_gamerpower_freebies():
     return freebies
 
 
-# === 3. GAME PASS (Reddit RSS — надёжнее JSON) ===
+# === 3. GAME PASS ===
 def get_gamepass():
     print("\n🎮 GAME PASS...")
     games = []
@@ -156,12 +156,11 @@ def get_gamepass():
     return games
 
 
-# === 4. СКИДКИ (CheapShark + Reddit RSS) ===
+# === 4. СКИДКИ ===
 def get_deals():
     print("\n💸 СКИДКИ...")
     deals = []
 
-    # Steam через CheapShark
     data = http_get("https://www.cheapshark.com/api/1.0/deals?storeID=1&discount=50&pageSize=12", timeout=20)
     if isinstance(data, list):
         for d in data:
@@ -172,7 +171,6 @@ def get_deals():
                 deals.append({"platform": "Steam", "title": title, "desc": f"Скидка {sav}%",
                               "image": None, "link": f"https://store.steampowered.com/app/{sid}/"})
 
-    # Консоли через Reddit RSS
     xml = http_get("https://www.reddit.com/r/GameDeals/.rss?limit=30", timeout=20, as_json=False)
     if xml:
         feed = feedparser.parse(xml)
@@ -195,7 +193,7 @@ def get_deals():
     return deals[:12]
 
 
-# === 5. НОВОСТИ (Русские RSS + Reddit RSS с картинками) ===
+# === 5. НОВОСТИ (рус + англ с переводом) ===
 def get_news():
     print("\n📰 НОВОСТИ...")
     news = []
@@ -212,12 +210,14 @@ def get_news():
                 link = entry.get("link", "")
                 if title and link and not is_duplicate(f"news_{link}"):
                     desc = re.sub(r'<[^>]+>', '', entry.get("summary", ""))[:200] if entry.get("summary") else ""
-                    news.append({"title": title, "desc": desc, "link": link, "source": src["name"], "image": None})
+                    news.append({"title": title, "title_ru": None, "desc": desc,
+                                 "link": link, "source": src["name"], "image": None})
 
-    # Reddit r/games (с картинками)
+    # Reddit r/games (англ) + перевод на русский
     xml = http_get("https://www.reddit.com/r/games/.rss?limit=20", timeout=20, as_json=False)
     if xml:
         feed = feedparser.parse(xml)
+        added = 0
         for entry in feed.entries:
             title = entry.get("title", "")
             link = entry.get("link", "")
@@ -225,30 +225,41 @@ def get_news():
             if hasattr(entry, "media_thumbnail") and entry.media_thumbnail:
                 image = entry.media_thumbnail[0].get("url")
             if title and image and not is_duplicate(f"news_{link}"):
-                news.append({"title": title, "desc": "", "link": link, "source": "Reddit", "image": image})
-                if len(news) >= 12:
+                # Переводим заголовок на русский
+                title_ru = translate_to_ru(title)
+                news.append({"title": title, "title_ru": title_ru, "desc": "",
+                             "link": link, "source": "Reddit", "image": image})
+                added += 1
+                if added >= 6:
                     break
 
-    # Сначала с картинками
     news.sort(key=lambda x: 0 if x.get("image") else 1)
     SOURCE_STATUS["news"] = "✅" if news else "⚠️"
     print(f"✅ Новости: {len(news)}")
     return news[:10]
 
 
-# === 6. YOUTUBE ===
+# === 6. YOUTUBE (user= + channel_id= fallback) ===
 def get_youtube():
     print("\n🎬 YOUTUBE...")
     videos = []
-    for ch in [{"name": "Xbox", "url": "https://www.youtube.com/feeds/videos.xml?user=xbox"},
-               {"name": "PlayStation", "url": "https://www.youtube.com/feeds/videos.xml?user=PlayStation"},
-               {"name": "Nintendo", "url": "https://www.youtube.com/feeds/videos.xml?user=Nintendo"}]:
-        xml = http_get(ch["url"], timeout=15, as_json=False, retries=2)
-        if xml:
-            feed = feedparser.parse(xml)
-            if feed.entries:
-                e = feed.entries[0]
-                videos.append({"title": e.title.strip(), "link": e.link, "source": ch["name"]})
+    channels = [
+        {"name": "Xbox", "urls": ["https://www.youtube.com/feeds/videos.xml?user=xbox",
+                                  "https://www.youtube.com/feeds/videos.xml?channel_id=UCIsGQj0ZNTL3z58jzVh3j3w"]},
+        {"name": "PlayStation", "urls": ["https://www.youtube.com/feeds/videos.xml?user=PlayStation",
+                                         "https://www.youtube.com/feeds/videos.xml?channel_id=UC-2Y8dQb0S6Dtp6EAKKJwnw"]},
+        {"name": "Nintendo", "urls": ["https://www.youtube.com/feeds/videos.xml?user=Nintendo",
+                                      "https://www.youtube.com/feeds/videos.xml?channel_id=UCGIY_O-8vW4rfX98kmZ5Eew"]}
+    ]
+    for ch in channels:
+        for url in ch["urls"]:
+            xml = http_get(url, timeout=15, as_json=False, retries=2)
+            if xml:
+                feed = feedparser.parse(xml)
+                if feed.entries:
+                    e = feed.entries[0]
+                    videos.append({"title": e.title.strip(), "link": e.link, "source": ch["name"]})
+                    break  # этот канал сработал, идём дальше
     SOURCE_STATUS["youtube"] = "✅" if videos else "⚠️"
     print(f"✅ YouTube: {len(videos)}")
     return videos
@@ -294,7 +305,11 @@ def publish_hub_deals():
 
 def publish_hub_news():
     for it in get_news():
-        text = f"📰 <b>НОВОСТЬ</b>\n\n{it['title']}\n\n"
+        # Если есть русский перевод — показываем оба языка красиво
+        if it.get("title_ru"):
+            text = f"📰 <b>НОВОСТЬ</b>\n\n🇷🇺 {it['title_ru']}\n\n🇬 {it['title']}\n\n"
+        else:
+            text = f"📰 <b>НОВОСТЬ</b>\n\n{it['title']}\n\n"
         if it.get("desc"):
             text += f"📝 <i>{it['desc']}</i>\n\n"
         text += f"🔗 <a href='{it['link']}'>Читать ({it['source']})</a>\n\n"
