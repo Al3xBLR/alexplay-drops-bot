@@ -7,7 +7,7 @@ import traceback
 import feedparser
 from datetime import datetime, timezone, timedelta
 
-# === НАСТРОЙКИ (из секретов GitHub) ===
+# === НАСТРОЙКИ ===
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 DROPS_CHANNEL_ID = os.environ.get("DROPS_CHANNEL_ID")
@@ -21,14 +21,11 @@ if not all([BOT_TOKEN, DROPS_CHANNEL_ID, HUB_CHANNEL_ID, RAWG_API_KEY]):
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 TELEGRAM_PHOTO_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
 
-# Расписание публикаций по московскому часу
 SCHEDULE = {9: "drops", 12: "hub_game", 15: "hub_news", 18: "hub_steam", 21: "hub_video"}
 
-# Журналы для отчётов в личку
 WARNINGS = []
 SOURCE_STATUS = {"epic": "—", "reddit": "—", "rawg": "—", "rss": "—", "youtube": "—", "steam": "—"}
 
-# Карта жанров для хештегов
 GENRE_TAG_MAP = {
     "Экшен": "Action", "Action": "Action",
     "Ролевая игра": "RPG", "RPG": "RPG",
@@ -41,7 +38,6 @@ GENRE_TAG_MAP = {
     "Аркада": "Arcade", "Спорт": "Sport",
 }
 
-# RSS-источники новостей (lang=en -> автоперевод на русский)
 RSS_SOURCES = [
     {"name": "DTF", "url": "https://dtf.ru/rss", "lang": "ru"},
     {"name": "StopGame", "url": "https://stopgame.ru/rss/news", "lang": "ru"},
@@ -49,21 +45,18 @@ RSS_SOURCES = [
     {"name": "PC Gamer", "url": "https://www.pcgamer.com/rss/", "lang": "en"},
 ]
 
-# Официальные YouTube-каналы
 YOUTUBE_CHANNELS = [
     {"name": "Nintendo", "feed": "https://www.youtube.com/feeds/videos.xml?user=Nintendo"},
     {"name": "PlayStation", "feed": "https://www.youtube.com/feeds/videos.xml?user=PlayStation"},
     {"name": "Xbox", "feed": "https://www.youtube.com/feeds/videos.xml?user=xbox"},
 ]
 
-# Официальные RSS Steam (новинки + новости)
 STEAM_SOURCES = [
     {"name": "Steam", "url": "https://store.steampowered.com/feeds/newreleases/"},
     {"name": "Steam", "url": "https://store.steampowered.com/feeds/news/"},
 ]
 
 
-# === АВТОПЕРЕВОД НА РУССКИЙ (без ключей, с запасным вариантом) ===
 def translate_to_ru(text):
     try:
         url = "https://translate.googleapis.com/translate_a/single"
@@ -148,11 +141,9 @@ def make_hashtags(genres_list):
     return " ".join("#" + t for t in tags)
 
 
-# === КНОПКИ ПОД ПОСТОМ (халява + видео + подробнее) ===
 def build_inline_buttons(slug, trailer_url, title):
     rows = []
     rows.append([{"text": "🎁 Забрать халяву", "url": "https://t.me/AlexPlayDrops"}])
-
     if trailer_url:
         rows.append([{"text": "🎬 Смотреть трейлер", "url": trailer_url}])
     else:
@@ -161,14 +152,12 @@ def build_inline_buttons(slug, trailer_url, title):
             "text": "🎬 Видеообзоры на YouTube",
             "url": f"https://www.youtube.com/results?search_query={q}+обзор+трейлер",
         }])
-
     if slug:
         rows.append([{"text": "📖 Подробнее об игре", "url": f"https://rawg.io/games/{slug}"}])
-
     return {"inline_keyboard": rows}
 
 
-# === RAWG: ИГРА ДНЯ + ТРЕЙЛЕР (с анти-дублем) ===
+# === RAWG: ИГРА ДНЯ + СКРИНШОТ + ТРЕЙЛЕР (анти-дубль) ===
 def get_rawg_game_data():
     print("Запрашиваем игру дня из RAWG.io...")
     try:
@@ -202,7 +191,7 @@ def get_rawg_game_data():
         detail_r = requests.get(detail_url, headers=headers, timeout=10)
         detail = detail_r.json()
 
-        # --- Надёжный поиск трейлера: urls -> video_id -> ID из превью ---
+        # --- ТРЕЙЛЕР: urls -> video_id -> ID из превью ---
         trailer_url = ""
         try:
             movies_url = f"https://api.rawg.io/api/games/{game['id']}/movies?key={RAWG_API_KEY}"
@@ -229,6 +218,18 @@ def get_rawg_game_data():
         except Exception as e:
             print(f"Трейлер не найден: {e}")
 
+        # --- СКРИНШОТ/ОБЛОЖКА: background_image -> первый скриншот ---
+        image_url = detail.get("background_image") or game.get("background_image")
+        if not image_url:
+            try:
+                sh_url = f"https://api.rawg.io/api/games/{game['id']}/screenshots?key={RAWG_API_KEY}"
+                sr = requests.get(sh_url, headers=headers, timeout=10)
+                shots = sr.json().get("results", [])
+                if shots:
+                    image_url = shots[0].get("image")
+            except Exception as e:
+                print(f"Скриншоты не получены: {e}")
+
         title = game.get("name", "Неизвестная игра")
         released = game.get("released")
         year = released[:4] if released else "—"
@@ -237,7 +238,6 @@ def get_rawg_game_data():
         playtime = detail.get("playtime")
         added = detail.get("added")
         reviews_count = detail.get("reviews_count")
-        image_url = detail.get("background_image")
 
         developers = detail.get("developers", [])
         dev_name = developers[0]["name"] if developers else "неизвестная студия"
@@ -300,6 +300,14 @@ def build_game_caption(data):
         msg += f"  |  🏆 Metacritic: <b>{data['metacritic']}/100</b>"
     msg += "\n\n"
     msg += f"📝 <i>{data['desc']}</i>\n\n"
+
+    # Видимая строка с трейлером прямо в посте
+    if data.get("trailer"):
+        msg += f"🎬 <a href='{data['trailer']}'><b>Смотреть трейлер</b></a>\n\n"
+    else:
+        q = data['title'].replace(" ", "+")
+        msg += f"🎬 <a href='https://www.youtube.com/results?search_query={q}+трейлер'><b>Трейлеры и обзоры на YouTube</b></a>\n\n"
+
     msg += "📊 <b>ПАСПОРТ ИГРЫ</b>\n"
     if data['genres_str']:
         msg += f"🎭 Жанры: {data['genres_str']}\n"
@@ -366,7 +374,6 @@ def build_fact(data):
     return "💡 <b>ФАКТ ДНЯ</b>\n\n" + " ".join(parts)
 
 
-# === НОВОСТИ RSS (с переводом английских) ===
 def get_rss_news(limit=5):
     news = []
     now = datetime.now(timezone.utc)
@@ -412,7 +419,6 @@ def get_rss_news(limit=5):
     return unique[:limit]
 
 
-# === НОВИНКИ STEAM / PC ===
 def get_steam_news(limit=4):
     print("Запрашиваем новинки Steam / PC...")
     news = []
@@ -457,7 +463,6 @@ def get_steam_news(limit=4):
     return unique[:limit]
 
 
-# === REDDIT (запасной для новостей) ===
 def get_gaming_news():
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -484,7 +489,6 @@ def get_gaming_news():
         return []
 
 
-# === ВИДЕО С ОФИЦИАЛЬНЫХ YOUTUBE-КАНАЛОВ ===
 def get_youtube_videos(limit=3):
     print("Запрашиваем видео с YouTube...")
     videos = []
@@ -521,7 +525,6 @@ def get_youtube_videos(limit=3):
     return videos[:limit]
 
 
-# === ПУБЛИКАЦИИ ===
 def publish_drops():
     epic_games = check_epic()
     other_freebies = check_other_platforms()
@@ -639,7 +642,6 @@ def publish_hub_video():
     print("Трейлеры обработаны!")
 
 
-# === ИСТОЧНИКИ ХАЛЯВЫ ===
 def check_epic():
     print("Проверяем Epic Games...")
     try:
@@ -697,7 +699,6 @@ def check_other_platforms():
         return []
 
 
-# === ОТЧЁТЫ В ЛИЧКУ ===
 def send_alert():
     if not CHAT_ID:
         return
@@ -744,7 +745,6 @@ def run_safe(name, func):
         print(traceback.format_exc())
 
 
-# === ГЛАВНАЯ ФУНКЦИЯ ===
 def main():
     print("Запуск бота AlexPlay...")
 
