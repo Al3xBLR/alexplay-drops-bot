@@ -27,4 +27,4 @@ jobs:
           DROPS_CHANNEL_ID: ${{ secrets.DROPS_CHANNEL_ID }}
           HUB_CHANNEL_ID: ${{ secrets.HUB_CHANNEL_ID }}
           RAWG_API_KEY: ${{ secrets.RAWG_API_KEY }}
-        run: python drops_bot.py auto
+        run: python drops_bot.py all
