@@ -645,12 +645,128 @@ def check_other_platforms():
         return []
 
 
-# === СКИДКИ НА ВСЕХ ПЛАТФОРМАХ (Reddit + Steam specials) ===
+# === УНИВЕРСАЛЬНЫЙ ПАРСЕР СКИДОК С САЙТА (xbox-now, xbdeals, psdeals) ===
+def parse_deals_site(url, emoji, platform):
+    print(f"Парсю скидки {platform} с {url}...")
+    try:
+        from bs4 import BeautifulSoup
+    except Exception as e:
+        print(f"BeautifulSoup не установлен: {e}")
+        return []
+
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        r = requests.get(url, headers=headers, timeout=15)
+        if r.status_code != 200:
+            print(f"{url} вернул {r.status_code}")
+            return []
+
+        soup = BeautifulSoup(r.text, "html.parser")
+        base_domain = "/".join(url.split("/")[:3])
+        deals = []
+
+        for a in soup.find_all("a", href=True):
+            name = a.get_text(strip=True)
+            if not name or len(name) < 3 or len(name) > 80:
+                continue
+            low = name.lower()
+            if low in ("see all", "next", "prev", "load more", "главная", "новости", "deals"):
+                continue
+
+            href = a["href"]
+            if href.startswith("/"):
+                href = base_domain + href
+            elif not href.startswith("http"):
+                continue
+
+            # поднимаемся вверх по дереву, ищем контекст со скидкой
+            discount = 0
+            node = a
+            for _ in range(4):
+                if node is None:
+                    break
+                context = node.get_text(" ", strip=True)
+                m = re.search(r'-\s*(\d{1,3})\s*%', context)
+                if m:
+                    discount = int(m.group(1))
+                    break
+                if "FREE" in context.upper() or "100%" in context:
+                    discount = 100
+                    break
+                node = node.find_parent()
+
+            if discount >= 40:
+                deals.append({
+                    "title": f"{emoji} [{platform}] {name} (−{discount}%)",
+                    "link": href,
+                    "discount": discount,
+                })
+
+        # дедупликация по названию
+        seen = set()
+        unique = []
+        for d in deals:
+            key = d["title"].lower()
+            if key not in seen:
+                seen.add(key)
+                unique.append(d)
+
+        unique.sort(key=lambda x: x["discount"], reverse=True)
+        return unique[:5]
+    except Exception as e:
+        print(f"Ошибка парсинга {url}: {e}")
+        return []
+
+
+def check_xbox_now():
+    return parse_deals_site("https://www.xbox-now.com/ru/deal-list", "🟩", "XBOX")
+
+
+def check_xbdeals():
+    return parse_deals_site("https://xbdeals.net/ru-store?type=games", "🟩", "XBOX")
+
+
+def check_psdeals():
+    return parse_deals_site("https://psdeals.net/ru-store/discounts", "🟦", "PLAYSTATION")
+
+
+# === СКИДКИ NINTENDO SWITCH из Reddit ===
+def check_switch_deals():
+    print("Проверяем скидки Nintendo Switch из Reddit...")
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        url = "https://www.reddit.com/r/GameDeals/hot.json?limit=25"
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code != 200:
+            return []
+        posts = r.json().get("data", {}).get("children", [])
+        deals = []
+        for post in posts:
+            pdata = post["data"]
+            title = pdata["title"]
+            link = "https://reddit.com" + pdata["permalink"]
+            low = title.lower()
+            is_switch = "switch" in low or "nintendo" in low
+            has_deal = re.search(r'(%|off|->|−)', low)
+            not_expired = "expired" not in low and "ended" not in low
+            if is_switch and has_deal and not_expired:
+                clean_title = re.sub(r'^\[[^\]]*\]\s*', '', title)
+                deals.append({
+                    "title": f"🟥 [SWITCH] {clean_title}",
+                    "link": link,
+                    "discount": 0,
+                })
+        return deals[:4]
+    except Exception as e:
+        print(f"Ошибка Switch-скидок: {e}")
+        return []
+
+
+# === ОБЩИЕ СКИДКИ (Reddit r/GameDeals + Steam specials) ===
 def check_discounts():
-    print("Проверяем скидки на всех платформах...")
+    print("Проверяем общие скидки...")
     deals = []
 
-    # 1) Reddit r/GameDeals — скидки со всех платформ
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         url = "https://www.reddit.com/r/GameDeals/hot.json?limit=20"
@@ -662,36 +778,23 @@ def check_discounts():
                 title = pdata["title"]
                 link = "https://reddit.com" + pdata["permalink"]
                 low = title.lower()
-                # пропускаем неактуальные и не-скидки
                 if "expired" in low or "ended" in low or "discussion" in low:
                     continue
-                deals.append({"title": title.strip(), "link": link, "score": pdata["score"]})
+                deals.append({"title": title.strip(), "link": link, "discount": 0})
     except Exception as e:
         print(f"Ошибка Reddit (скидки): {e}")
 
-    # 2) Официальная лента скидок Steam (запасной источник)
     try:
         feed = feedparser.parse("https://store.steampowered.com/feeds/specials/")
         for entry in feed.entries[:6]:
             title = entry.get("title", "").strip()
             link = entry.get("link", "")
             if title and link:
-                deals.append({"title": title, "link": link, "score": 0})
+                deals.append({"title": title, "link": link, "discount": 0})
     except Exception as e:
         print(f"Ошибка Steam specials: {e}")
 
-    # самые популярные — сверху
-    deals.sort(key=lambda x: x["score"], reverse=True)
-
-    # дедупликация по ссылке
-    seen = set()
-    unique = []
-    for d in deals:
-        if d["link"] not in seen:
-            seen.add(d["link"])
-            unique.append(d)
-
-    return unique[:6]
+    return deals[:5]
 
 
 def check_epic():
@@ -727,7 +830,26 @@ def check_epic():
 def publish_drops():
     epic_games = check_epic()
     other_freebies = check_other_platforms()
-    discounts = check_discounts()
+
+    # Собираем скидки со всех источников
+    all_deals = []
+    all_deals += check_xbox_now()
+    all_deals += check_xbdeals()
+    all_deals += check_psdeals()
+    all_deals += check_switch_deals()
+    all_deals += check_discounts()
+
+    # Дедупликация по ссылке
+    seen = set()
+    merged_deals = []
+    for d in all_deals:
+        if d["link"] not in seen:
+            seen.add(d["link"])
+            merged_deals.append(d)
+
+    # Сначала с известной высокой скидкой, потом остальные
+    merged_deals.sort(key=lambda x: x.get("discount", 0), reverse=True)
+    merged_deals = merged_deals[:12]
 
     has_freebies = bool(epic_games) or bool(other_freebies)
 
@@ -761,10 +883,10 @@ def publish_drops():
         if not ok:
             WARNINGS.append("Не удалось опубликовать халяву в Drops.")
 
-    # Пост 2: горячие скидки
-    if discounts:
-        disc_msg = "💸 <b>ГОРЯЧИЕ СКИДКИ НА ВСЕХ ПЛАТФОРМАХ!</b>\n\n"
-        for i, d in enumerate(discounts, 1):
+    # Пост 2: горячие скидки со всех платформ
+    if merged_deals:
+        disc_msg = "💸 <b>ГОРЯЧИЕ СКИДКИ — XBOX, PLAYSTATION, SWITCH, PC!</b>\n\n"
+        for i, d in enumerate(merged_deals, 1):
             disc_msg += f"  {i}. <b>{d['title']}</b>\n"
             disc_msg += f"     🔗 <a href='{d['link']}'>Ссылка на скидку</a>\n\n"
         disc_msg += "⏰ <i>Скидки ограничены по времени!</i>\n"
@@ -774,7 +896,7 @@ def publish_drops():
         if not ok2:
             WARNINGS.append("Не удалось опубликовать скидки в Drops.")
 
-    if not has_freebies and not discounts:
+    if not has_freebies and not merged_deals:
         drops_msg = (
             "🤖 <b>Тишина в эфире!</b>\n\n"
             "Сегодня раздач и крупных скидок не найдено. "
