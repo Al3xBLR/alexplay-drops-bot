@@ -1,31 +1,30 @@
-name: Проверка бесплатных игр и контент Hub
+name: AlexPlay - Расписание
 
 on:
   schedule:
-    - cron: '0 7 * * *'  # Каждый день в 10:00 по Москве
-  workflow_dispatch:     # Для ручного запуска
+    - cron: '0 */3 * * *'   # каждые 3 часа; бот сам выбирает рубрику по московскому времени
+  workflow_dispatch:        # ручной запуск кнопкой
 
 jobs:
-  check-games:
+  auto:
     runs-on: ubuntu-latest
     steps:
       - name: Скачать код
         uses: actions/checkout@v4
-      
+
       - name: Установить Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      
+
       - name: Установить библиотеки
-        run: pip install requests
-      
+        run: pip install requests feedparser
+
       - name: Запустить бота
         env:
-          # ЭТИ СТРОКИ ПЕРЕДАЮТ СЕКРЕТЫ ИЗ GITHUB В PYTHON
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           DROPS_CHANNEL_ID: ${{ secrets.DROPS_CHANNEL_ID }}
           HUB_CHANNEL_ID: ${{ secrets.HUB_CHANNEL_ID }}
           RAWG_API_KEY: ${{ secrets.RAWG_API_KEY }}
-        run: python drops_bot.py
+        run: python drops_bot.py auto
