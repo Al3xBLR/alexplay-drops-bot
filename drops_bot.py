@@ -27,7 +27,7 @@ SCHEDULE = {9: "drops", 12: "hub_game", 15: "hub_news", 18: "hub_steam", 21: "hu
 WARNINGS = []
 SOURCE_STATUS = {"epic": "—", "reddit": "—", "rawg": "—", "rss": "—", "youtube": "—", "steam": "—"}
 
-# === ЗАПАСНОЙ СПИСОК ИГР (если RAWG недоступен) — меняется каждый день ===
+# === ЗАПАСНОЙ СПИСОК ИГР (если RAWG недоступен) ===
 FALLBACK_GAMES = [
     {"title": "The Witcher 3: Wild Hunt", "year": "2015", "dev": "CD Projekt RED",
      "desc": "Эпичная RPG про Геральта из Ривии. Один из лучших сюжетов в истории игр.",
@@ -611,7 +611,7 @@ def get_youtube_videos(limit=3):
     return videos[:limit]
 
 
-# === ХАЛЯВА СО ВСЕХ ПЛОЩАДОК (PC + мобильные) ===
+# === ХАЛЯВА СО ВСЕХ ПЛОЩАДОК ===
 def check_other_platforms():
     print("Проверяем халяву (Steam, GOG, консоли, Android, iOS)...")
     try:
@@ -645,31 +645,53 @@ def check_other_platforms():
         return []
 
 
-# === СКИДКИ НА ВСЕХ ПЛАТФОРМАХ (r/GameDeals) ===
+# === СКИДКИ НА ВСЕХ ПЛАТФОРМАХ (Reddit + Steam specials) ===
 def check_discounts():
     print("Проверяем скидки на всех платформах...")
+    deals = []
+
+    # 1) Reddit r/GameDeals — скидки со всех платформ
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        url = "https://www.reddit.com/r/GameDeals/hot.json?limit=15"
+        url = "https://www.reddit.com/r/GameDeals/hot.json?limit=20"
         r = requests.get(url, headers=headers, timeout=10)
-        if r.status_code != 200:
-            return []
-        posts = r.json().get("data", {}).get("children", [])
-        deals = []
-        for post in posts:
-            pdata = post["data"]
-            title = pdata["title"]
-            link = "https://reddit.com" + pdata["permalink"]
-            score = pdata["score"]
-            # берём только реальные скидки (есть % или стрелка цены)
-            if re.search(r'(%|off|->|−)', title, re.IGNORECASE):
-                deals.append({"title": title.strip(), "link": link, "score": score})
-        # самые популярные скидки — сверху
-        deals.sort(key=lambda x: x["score"], reverse=True)
-        return deals[:6]
+        if r.status_code == 200:
+            posts = r.json().get("data", {}).get("children", [])
+            for post in posts:
+                pdata = post["data"]
+                title = pdata["title"]
+                link = "https://reddit.com" + pdata["permalink"]
+                low = title.lower()
+                # пропускаем неактуальные и не-скидки
+                if "expired" in low or "ended" in low or "discussion" in low:
+                    continue
+                deals.append({"title": title.strip(), "link": link, "score": pdata["score"]})
     except Exception as e:
         print(f"Ошибка Reddit (скидки): {e}")
-        return []
+
+    # 2) Официальная лента скидок Steam (запасной источник)
+    try:
+        feed = feedparser.parse("https://store.steampowered.com/feeds/specials/")
+        for entry in feed.entries[:6]:
+            title = entry.get("title", "").strip()
+            link = entry.get("link", "")
+            if title and link:
+                deals.append({"title": title, "link": link, "score": 0})
+    except Exception as e:
+        print(f"Ошибка Steam specials: {e}")
+
+    # самые популярные — сверху
+    deals.sort(key=lambda x: x["score"], reverse=True)
+
+    # дедупликация по ссылке
+    seen = set()
+    unique = []
+    for d in deals:
+        if d["link"] not in seen:
+            seen.add(d["link"])
+            unique.append(d)
+
+    return unique[:6]
 
 
 def check_epic():
@@ -701,7 +723,7 @@ def check_epic():
         return []
 
 
-# === ПУБЛИКАЦИЯ В КАНАЛ ХАЛЯВЫ (халява + скидки отдельными постами) ===
+# === ПУБЛИКАЦИЯ В КАНАЛ ХАЛЯВЫ ===
 def publish_drops():
     epic_games = check_epic()
     other_freebies = check_other_platforms()
@@ -739,7 +761,7 @@ def publish_drops():
         if not ok:
             WARNINGS.append("Не удалось опубликовать халяву в Drops.")
 
-    # Пост 2: горячие скидки на всех платформах
+    # Пост 2: горячие скидки
     if discounts:
         disc_msg = "💸 <b>ГОРЯЧИЕ СКИДКИ НА ВСЕХ ПЛАТФОРМАХ!</b>\n\n"
         for i, d in enumerate(discounts, 1):
@@ -752,7 +774,6 @@ def publish_drops():
         if not ok2:
             WARNINGS.append("Не удалось опубликовать скидки в Drops.")
 
-    # Если нет ни халявы, ни скидок
     if not has_freebies and not discounts:
         drops_msg = (
             "🤖 <b>Тишина в эфире!</b>\n\n"
