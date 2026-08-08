@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import json
+import time
 import traceback
 import feedparser
 from datetime import datetime, timezone, timedelta
@@ -55,6 +56,22 @@ STEAM_SOURCES = [
     {"name": "Steam", "url": "https://store.steampowered.com/feeds/newreleases/"},
     {"name": "Steam", "url": "https://store.steampowered.com/feeds/news/"},
 ]
+
+
+# === НАДЁЖНЫЙ ЗАПРОС С ПОВТОРАМИ (спасает от таймаутов RAWG) ===
+def fetch_json(url, headers=None, timeout=20, retries=3):
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.get(url, headers=headers, timeout=timeout)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            last_error = e
+            print(f"Попытка {attempt}/{retries} не удалась: {e}")
+            if attempt < retries:
+                time.sleep(2)
+    raise last_error
 
 
 def translate_to_ru(text):
@@ -157,6 +174,7 @@ def build_inline_buttons(slug, trailer_url, title):
     return {"inline_keyboard": rows}
 
 
+# === RAWG: ИГРА ДНЯ + СКРИНШОТ + ТРЕЙЛЕР (с повторами и анти-дублем) ===
 def get_rawg_game_data():
     print("Запрашиваем игру дня из RAWG.io...")
     try:
@@ -171,9 +189,7 @@ def get_rawg_game_data():
         )
         headers = {"User-Agent": "AlexPlayBot/1.0"}
 
-        r = requests.get(url, headers=headers, timeout=10)
-        r.raise_for_status()
-        games = r.json().get("results", [])
+        games = fetch_json(url, headers).get("results", [])
 
         if not games:
             raise Exception("Пустой список игр")
@@ -187,14 +203,12 @@ def get_rawg_game_data():
             f"https://api.rawg.io/api/games/{game['id']}"
             f"?key={RAWG_API_KEY}&language=ru"
         )
-        detail_r = requests.get(detail_url, headers=headers, timeout=10)
-        detail = detail_r.json()
+        detail = fetch_json(detail_url, headers)
 
         trailer_url = ""
         try:
             movies_url = f"https://api.rawg.io/api/games/{game['id']}/movies?key={RAWG_API_KEY}"
-            mr = requests.get(movies_url, headers=headers, timeout=10)
-            movies = mr.json().get("results", [])
+            movies = fetch_json(movies_url, headers).get("results", [])
             for m in movies:
                 for u in (m.get("urls") or []):
                     link = u.get("url", "")
@@ -220,8 +234,7 @@ def get_rawg_game_data():
         if not image_url:
             try:
                 sh_url = f"https://api.rawg.io/api/games/{game['id']}/screenshots?key={RAWG_API_KEY}"
-                sr = requests.get(sh_url, headers=headers, timeout=10)
-                shots = sr.json().get("results", [])
+                shots = fetch_json(sh_url, headers).get("results", [])
                 if shots:
                     image_url = shots[0].get("image")
             except Exception as e:
@@ -667,16 +680,15 @@ def check_epic():
         return []
 
 
-# === ХАЛЯВА СО ВСЕХ ПЛОЩАДОК (PC + мобильные) ===
 def check_other_platforms():
     print("Проверяем другие площадки (Steam, GOG, консоли, Android, iOS)...")
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         subreddits = [
-            "FreeGameFindings",    # PC и консоли
-            "FreeGamesOnSteam",    # Steam
-            "AppHookup",           # Android и iOS приложения/игры
-            "GameDealsFree",       # бесплатные игры на всех платформах
+            "FreeGameFindings",
+            "FreeGamesOnSteam",
+            "AppHookup",
+            "GameDealsFree",
         ]
         freebies = []
         for sub in subreddits:
@@ -691,7 +703,7 @@ def check_other_platforms():
                 link = "https://reddit.com" + pdata["permalink"]
                 pattern = r'\b(free|giveaway|100%|раздача)\b'
                 if re.search(pattern, title, re.IGNORECASE):
-                    clean_title = title.strip()  # сохраняем теги [Android]/[iOS]/[Steam]
+                    clean_title = title.strip()
                     already_added = any(item['link'] == link for item in freebies)
                     if not already_added:
                         freebies.append({"title": clean_title, "link": link})
