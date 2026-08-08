@@ -18,7 +18,7 @@ jobs:
           python-version: '3.10'
 
       - name: Установить библиотеки
-        run: pip install requests feedparser
+        run: pip install requests feedparser beautifulsoup4
 
       - name: Запустить бота
         env:
